@@ -21,6 +21,8 @@ let dimensionStats = {};
 let trackedPeople = {};
 let nextPersonId = 0;
 
+let characterImageSets = [];
+
 const KEYPOINT_NAMES = [
   "nose",
   "left_shoulder",
@@ -72,6 +74,31 @@ const MAX_TRACKED_PEOPLE = 5;
 const MIN_CONFIDENCE = 0.2;
 
 function preload() {
+
+   function loadCharacterImages(folder) {
+    let imgs = {};
+    const parts = [
+      "head", "chest",
+      "left-shoulder", "left-arm", "left-thigh", "left-leg",
+      "right-shoulder", "right-arm", "right-thigh", "right-leg"
+    ];
+    for (let part of parts) {
+      imgs[part] = loadImage(`${folder}/${part}.png`);
+    }
+    // Alias right-side limbs to their left counterparts if needed
+    if (!imgs["right-shoulder"]) imgs["right-shoulder"] = imgs["left-shoulder"];
+    if (!imgs["right-arm"]) imgs["right-arm"] = imgs["left-arm"];
+    if (!imgs["right-thigh"]) imgs["right-thigh"] = imgs["left-thigh"];
+    if (!imgs["right-leg"]) imgs["right-leg"] = imgs["left-leg"];
+    return imgs;
+  }
+
+    characterImageSets = [
+    loadCharacterImages("lebron"),
+    loadCharacterImages("ice-cube"),
+    // Add more folders here as needed
+  ];
+
   bodyPose = ml5.bodyPose("MoveNet", { flipped: true });
 
   // Right limb images are mirrored from left at render time.
@@ -79,18 +106,18 @@ function preload() {
   // left-shoulder, left-arm, left-thigh, left-leg.
 
   // Load unique images
-  bodyPartImages["head"] = loadImage(`lebron/head.png`);
-  bodyPartImages["chest"] = loadImage(`lebron/chest.png`);
-  bodyPartImages["left-shoulder"] = loadImage(`lebron/left-shoulder.png`);
-  bodyPartImages["left-arm"] = loadImage(`lebron/left-arm.png`);
-  bodyPartImages["left-thigh"] = loadImage(`lebron/left-thigh.png`);
-  bodyPartImages["left-leg"] = loadImage(`lebron/left-leg.png`);
+  // bodyPartImages["head"] = loadImage(`lebron/head.png`);
+  // bodyPartImages["chest"] = loadImage(`lebron/chest.png`);
+  // bodyPartImages["left-shoulder"] = loadImage(`lebron/left-shoulder.png`);
+  // bodyPartImages["left-arm"] = loadImage(`lebron/left-arm.png`);
+  // bodyPartImages["left-thigh"] = loadImage(`lebron/left-thigh.png`);
+  // bodyPartImages["left-leg"] = loadImage(`lebron/left-leg.png`);
 
   // Alias right-side limbs to their left counterparts (will be flipped at render)
-  bodyPartImages["right-shoulder"] = bodyPartImages["left-shoulder"];
-  bodyPartImages["right-arm"] = bodyPartImages["left-arm"];
-  bodyPartImages["right-thigh"] = bodyPartImages["left-thigh"];
-  bodyPartImages["right-leg"] = bodyPartImages["left-leg"];
+  // bodyPartImages["right-shoulder"] = bodyPartImages["left-shoulder"];
+  // bodyPartImages["right-arm"] = bodyPartImages["left-arm"];
+  // bodyPartImages["right-thigh"] = bodyPartImages["left-thigh"];
+  // bodyPartImages["right-leg"] = bodyPartImages["left-leg"];
 }
 
 function mousePressed() {
@@ -252,12 +279,15 @@ function createTrackedPerson(pose, center) {
     }
   }
 
+  let characterIndex = (Object.keys(trackedPeople).length) % characterImageSets.length;
+
   trackedPeople[id] = {
     id,
     smoothPoints,
     center: createVector(center.x, center.y),
     lastSeen: frameCount,
-    accent: random(360)
+    accent: random(360), 
+    characterIndex
   };
 }
 
@@ -399,45 +429,47 @@ function drawScrapbookBody(person, id) {
   // strokeWeight(2);
   // circle(nose.x, nose.y, headSize);
 
+  let images = characterImageSets[person.characterIndex] || characterImageSets[0];
+
 
 
   // Render body parts (either images or shapes based on mode)
   if (useShapeMode) {
     // In shape mode, use normalized scale factors to show true skeletal proportions
-    drawBodyShape(bodyPartImages["left-arm"], leftElbow, leftWrist, "left-arm", id, 0.8);
-    drawBodyShape(bodyPartImages["left-shoulder"], leftShoulder, leftElbow, "left-shoulder", id, 0.8);
+    drawBodyShape(images["left-arm"], leftElbow, leftWrist, "left-arm", id, 0.8);
+    drawBodyShape(images["left-shoulder"], leftShoulder, leftElbow, "left-shoulder", id, 0.8);
 
-    drawBodyShape(bodyPartImages["right-arm"], rightElbow, rightWrist, "right-arm", id, 0.8);
-    drawBodyShape(bodyPartImages["right-shoulder"], rightShoulder, rightElbow, "right-shoulder", id, 0.8);
+    drawBodyShape(images["right-arm"], rightElbow, rightWrist, "right-arm", id, 0.8);
+    drawBodyShape(images["right-shoulder"], rightShoulder, rightElbow, "right-shoulder", id, 0.8);
 
-    drawBodyShape(bodyPartImages["left-leg"], leftKnee, leftAnkle, "left-leg", id, 0.8);
-    drawBodyShape(bodyPartImages["left-thigh"], leftHip, leftKnee, "left-thigh", id, 0.8);
+    drawBodyShape(images["left-leg"], leftKnee, leftAnkle, "left-leg", id, 0.8);
+    drawBodyShape(images["left-thigh"], leftHip, leftKnee, "left-thigh", id, 0.8);
 
-    drawBodyShape(bodyPartImages["right-leg"], rightKnee, rightAnkle, "right-leg", id, 0.8);
-    drawBodyShape(bodyPartImages["right-thigh"], rightHip, rightKnee, "right-thigh", id, 0.8);
+    drawBodyShape(images["right-leg"], rightKnee, rightAnkle, "right-leg", id, 0.8);
+    drawBodyShape(images["right-thigh"], rightHip, rightKnee, "right-thigh", id, 0.8);
 
-    drawBodyShape(bodyPartImages["chest"], shoulderCenter, hipCenter, "chest", id, 0.8);
+    drawBodyShape(images["chest"], shoulderCenter, hipCenter, "chest", id, 0.8);
 
-    drawBodyShape(bodyPartImages["head"], nose, shoulderCenter, "head", id, 1.2, 0.25);
+    drawBodyShape(images["head"], nose, shoulderCenter, "head", id, 1.2, 0.25);
   } else {
     // In image mode, use artistic scale factors for collage effect
-    drawBodyImage(bodyPartImages["left-arm"], leftElbow, leftWrist, .8, 0, false);
-    drawBodyImage(bodyPartImages["left-shoulder"], leftShoulder, leftElbow, .5, 0, false);
+    drawBodyImage(images["left-arm"], leftElbow, leftWrist, .8, 0, false);
+    drawBodyImage(images["left-shoulder"], leftShoulder, leftElbow, .5, 0, false);
 
-    drawBodyImage(bodyPartImages["right-arm"], rightElbow, rightWrist, .8, 0, true);
-    drawBodyImage(bodyPartImages["right-shoulder"], rightShoulder, rightElbow, .5, 0, true);
+    drawBodyImage(images["right-arm"], rightElbow, rightWrist, .8, 0, true);
+    drawBodyImage(images["right-shoulder"], rightShoulder, rightElbow, .5, 0, true);
 
-    drawBodyImage(bodyPartImages["left-leg"], leftKnee, leftAnkle, .4, 0, false);
-    drawBodyImage(bodyPartImages["left-thigh"], leftHip, leftKnee, .4, 0, false);
+    drawBodyImage(images["left-leg"], leftKnee, leftAnkle, .4, 0, false);
+    drawBodyImage(images["left-thigh"], leftHip, leftKnee, .4, 0, false);
 
-    drawBodyImage(bodyPartImages["right-leg"], rightKnee, rightAnkle, .4, 0, true);
-    drawBodyImage(bodyPartImages["right-thigh"], rightHip, rightKnee, .4, 0, true);
+    drawBodyImage(images["right-leg"], rightKnee, rightAnkle, .4, 0, true);
+    drawBodyImage(images["right-thigh"], rightHip, rightKnee, .4, 0, true);
 
-    drawBodyImage(bodyPartImages["chest"], shoulderCenter, hipCenter, .8, 0, false);
+    drawBodyImage(images["chest"], shoulderCenter, hipCenter, .8, 0, false);
 
     // Adjust head position up by 10px
     let adjustedNose = createVector(nose.x, nose.y - 10);
-    drawBodyImage(bodyPartImages["head"], adjustedNose, shoulderCenter, 1.2, 0, false);
+    drawBodyImage(images["head"], adjustedNose, shoulderCenter, 1.2, 0, false);
   }
 
 
