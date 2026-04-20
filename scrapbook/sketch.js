@@ -86,10 +86,10 @@ function preload() {
       imgs[part] = loadImage(`${folder}/${part}.png`);
     }
     // Alias right-side limbs to their left counterparts if needed
-    if (!imgs["right-shoulder"]) imgs["right-shoulder"] = imgs["left-shoulder"];
-    if (!imgs["right-arm"]) imgs["right-arm"] = imgs["left-arm"];
-    if (!imgs["right-thigh"]) imgs["right-thigh"] = imgs["left-thigh"];
-    if (!imgs["right-leg"]) imgs["right-leg"] = imgs["left-leg"];
+    // if (!imgs["right-shoulder"]) imgs["right-shoulder"] = imgs["left-shoulder"];
+    // if (!imgs["right-arm"]) imgs["right-arm"] = imgs["left-arm"];
+    // if (!imgs["right-thigh"]) imgs["right-thigh"] = imgs["left-thigh"];
+    // if (!imgs["right-leg"]) imgs["right-leg"] = imgs["left-leg"];
     return imgs;
   }
 
@@ -453,28 +453,28 @@ function drawScrapbookBody(person, id) {
     drawBodyShape(images["head"], nose, shoulderCenter, "head", id, 1.2, 0.25);
   } else {
     // In image mode, use artistic scale factors for collage effect
-    drawBodyImage(images["left-arm"], leftElbow, leftWrist, .8, 0, false);
+    drawBodyImage(images["left-arm"], leftElbow, leftWrist, .55, 0, false);
     drawBodyImage(images["left-shoulder"], leftShoulder, leftElbow, .5, 0, false);
 
-    drawBodyImage(images["right-arm"], rightElbow, rightWrist, .8, 0, true);
-    drawBodyImage(images["right-shoulder"], rightShoulder, rightElbow, .5, 0, true);
+    drawBodyImage(images["right-arm"], rightElbow, rightWrist, .55, 0, false);
+    drawBodyImage(images["right-shoulder"], rightShoulder, rightElbow, .5, 0, false);
 
     drawBodyImage(images["left-leg"], leftKnee, leftAnkle, .4, 0, false);
     drawBodyImage(images["left-thigh"], leftHip, leftKnee, .4, 0, false);
 
-    drawBodyImage(images["right-leg"], rightKnee, rightAnkle, .4, 0, true);
-    drawBodyImage(images["right-thigh"], rightHip, rightKnee, .4, 0, true);
+    drawBodyImage(images["right-leg"], rightKnee, rightAnkle, .8, 0, false);
+    drawBodyImage(images["right-thigh"], rightHip, rightKnee, .4, 0, false);
 
     drawBodyImage(images["chest"], shoulderCenter, hipCenter, .8, 0, false);
 
     drawBodyImage(bodyPartImages["left-arm"], leftElbow, leftWrist, .55, 0, false);
     drawBodyImage(bodyPartImages["left-shoulder"], leftShoulder, leftElbow, .5, 0, false);
 
-    drawBodyImage(bodyPartImages["right-arm"], rightElbow, rightWrist, .55, 0, true);
-    drawBodyImage(bodyPartImages["right-shoulder"], rightShoulder, rightElbow, .5, 0, true);
+    drawBodyImage(bodyPartImages["right-arm"], rightElbow, rightWrist, .55, 0, false);
+    drawBodyImage(bodyPartImages["right-shoulder"], rightShoulder, rightElbow, .5, 0, false);
 
     // Adjust head position up by 10px
-    let adjustedNose = createVector(nose.x, nose.y - 10);
+    let adjustedNose = createVector(nose.x, nose.y - 40);
     drawBodyImage(images["head"], adjustedNose, shoulderCenter, 1.2, 0, false);
   }
 
