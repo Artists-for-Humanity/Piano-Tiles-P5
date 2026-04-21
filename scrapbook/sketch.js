@@ -73,6 +73,10 @@ const MAX_MISSING_FRAMES = 20;
 const MAX_TRACKED_PEOPLE = 5;
 const MIN_CONFIDENCE = 0.2;
 
+// color trail
+const TRAIL_LENGTH = 10;       // number of ghost frames kept
+const TRAIL_SAMPLE_RATE = 2;   // capture a snapshot every N draw frames
+
 function preload() {
 
    function loadCharacterImages(folder) {
@@ -286,8 +290,9 @@ function createTrackedPerson(pose, center) {
     smoothPoints,
     center: createVector(center.x, center.y),
     lastSeen: frameCount,
-    accent: random(360), 
-    characterIndex
+    accent: random(360),
+    characterIndex,
+    poseHistory: []
   };
 }
 
@@ -305,6 +310,18 @@ function updateTrackedPerson(person, pose, newCenter) {
     } else {
       person.smoothPoints[name].x = lerp(person.smoothPoints[name].x, pt.x, SMOOTHING);
       person.smoothPoints[name].y = lerp(person.smoothPoints[name].y, pt.y, SMOOTHING);
+    }
+  }
+
+  // Capture trail snapshot at regular intervals
+  if (frameCount % TRAIL_SAMPLE_RATE === 0) {
+    let snapshot = {};
+    for (let name in person.smoothPoints) {
+      snapshot[name] = person.smoothPoints[name].copy();
+    }
+    person.poseHistory.push(snapshot);
+    if (person.poseHistory.length > TRAIL_LENGTH) {
+      person.poseHistory.shift();
     }
   }
 }
@@ -431,7 +448,16 @@ function drawScrapbookBody(person, id) {
 
   let images = characterImageSets[person.characterIndex] || characterImageSets[0];
 
-
+  // --- Delayed color trail ---
+  if (!useShapeMode && person.poseHistory.length > 0) {
+    for (let t = 0; t < person.poseHistory.length; t++) {
+      let progress = t / (person.poseHistory.length - 1 || 1); // 0 = oldest, 1 = newest
+      let alpha = lerp(15, 90, progress);
+      let hueShift = lerp(180, 60, progress); // older = complementary hue, newer = closer to accent
+      let tintHue = (person.accent + hueShift) % 360;
+      drawBodyAtSnapshot(person, person.poseHistory[t], alpha, tintHue);
+    }
+  }
 
   // Render body parts (either images or shapes based on mode)
   if (useShapeMode) {
@@ -453,6 +479,10 @@ function drawScrapbookBody(person, id) {
     drawBodyShape(images["head"], nose, shoulderCenter, "head", id, 1.2, 0.25);
   } else {
     // In image mode, use artistic scale factors for collage effect
+    // Apply a per-person hue tint to the live frame
+    colorMode(HSL);
+    tint(person.accent % 360, 70, 65, 200);
+
     drawBodyImage(images["left-arm"], leftElbow, leftWrist, .55, 0, false);
     drawBodyImage(images["left-shoulder"], leftShoulder, leftElbow, .5, 0, false);
 
@@ -476,6 +506,9 @@ function drawScrapbookBody(person, id) {
     // Adjust head position up by 10px
     let adjustedNose = createVector(nose.x, nose.y - 40);
     drawBodyImage(images["head"], adjustedNose, shoulderCenter, 1.2, 0, false);
+
+    noTint();
+    colorMode(RGB);
   }
 
 
@@ -626,6 +659,53 @@ function drawBodyShape(img, a, b, partName, personId, scale = 1, offsetY = 0) {
   }
 
   return { width: drawWidth, height: drawHeight, aspect: aspect };
+}
+
+/* =========================
+   COLOR TRAIL
+========================= */
+
+function drawBodyAtSnapshot(person, pts, alpha, tintHue) {
+  let nose          = pts["nose"];
+  let leftShoulder  = pts["left_shoulder"];
+  let rightShoulder = pts["right_shoulder"];
+  let leftElbow     = pts["left_elbow"];
+  let rightElbow    = pts["right_elbow"];
+  let leftWrist     = pts["left_wrist"];
+  let rightWrist    = pts["right_wrist"];
+  let leftHip       = pts["left_hip"];
+  let rightHip      = pts["right_hip"];
+  let leftKnee      = pts["left_knee"];
+  let rightKnee     = pts["right_knee"];
+  let leftAnkle     = pts["left_ankle"];
+  let rightAnkle    = pts["right_ankle"];
+
+  if (!nose || !leftShoulder || !rightShoulder ||
+      !leftHip || !rightHip || !leftElbow || !rightElbow ||
+      !leftWrist || !rightWrist || !leftKnee || !rightKnee ||
+      !leftAnkle || !rightAnkle) return;
+
+  let images = characterImageSets[person.characterIndex] || characterImageSets[0];
+  let shoulderCenter = midpoint(leftShoulder, rightShoulder);
+  let hipCenter      = midpoint(leftHip, rightHip);
+  let adjustedNose   = createVector(nose.x, nose.y - 40);
+
+  colorMode(HSL);
+  tint(tintHue % 360, 90, 60, alpha);
+
+  drawBodyImage(images["left-arm"],       leftElbow,     leftWrist,     .55, 0, false);
+  drawBodyImage(images["left-shoulder"],  leftShoulder,  leftElbow,     .5,  0, false);
+  drawBodyImage(images["right-arm"],      rightElbow,    rightWrist,    .55, 0, false);
+  drawBodyImage(images["right-shoulder"], rightShoulder, rightElbow,    .5,  0, false);
+  drawBodyImage(images["left-leg"],       leftKnee,      leftAnkle,     .4,  0, false);
+  drawBodyImage(images["left-thigh"],     leftHip,       leftKnee,      .4,  0, false);
+  drawBodyImage(images["right-leg"],      rightKnee,     rightAnkle,    .8,  0, false);
+  drawBodyImage(images["right-thigh"],    rightHip,      rightKnee,     .4,  0, false);
+  drawBodyImage(images["chest"],          shoulderCenter, hipCenter,    .8,  0, false);
+  drawBodyImage(images["head"],           adjustedNose,  shoulderCenter, 1.2, 0, false);
+
+  noTint();
+  colorMode(RGB);
 }
 
 /* =========================
