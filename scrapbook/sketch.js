@@ -754,10 +754,10 @@ function drawBodyAtSnapshot(person, pts, alpha, palette, ptsHistory = []) {
   const DOT = 2;
   const GAP = 6;
 
-  // Subsample history to ~14 evenly-spaced frames for fluid trails
+  // Subsample history to ~10 evenly-spaced frames for fluid trails
   function hist(name) {
     if (ptsHistory.length === 0) return [];
-    let step = max(1, floor(ptsHistory.length / 14));
+    let step = max(1, floor(ptsHistory.length / 10));
     let out  = [];
     for (let i = 0; i < ptsHistory.length; i += step) {
       let p = ptsHistory[i][name];
@@ -799,6 +799,48 @@ function drawBodyAtSnapshot(person, pts, alpha, palette, ptsHistory = []) {
 
   noStroke();
   colorMode(RGB);
+}
+
+// Batched trail + dot renderer — one canvas path per progress level across ALL dots.
+// Replaces per-dot p5 stroke/line calls (O(dots×steps)) with O(steps) canvas paths.
+function renderDotsAndTrails(dots, palette, dotSize, alpha) {
+  if (dots.length === 0) return;
+  let trailLen = dots[0].trail.length;
+  let ctx = drawingContext;
+  ctx.save();
+  ctx.lineCap = 'round';
+
+  if (trailLen > 1) {
+    // Pre-compute colors once (not per-dot), then batch all dots at the same level into one path
+    for (let i = 0; i < trailLen - 1; i++) {
+      let progress = i / (trailLen - 1);
+      let [ph, ps, pl] = lerpPalette3(palette, progress);
+      let a  = lerp(0, alpha * 0.55, pow(progress, 1.2)) / 100;
+      let w  = lerp(0.4, dotSize * 1.3, progress);
+      ctx.strokeStyle = `hsla(${ph},${ps}%,${pl}%,${a})`;
+      ctx.lineWidth   = w;
+      ctx.beginPath();
+      for (let d of dots) {
+        if (i + 1 < d.trail.length) {
+          ctx.moveTo(d.trail[i].x,     d.trail[i].y);
+          ctx.lineTo(d.trail[i + 1].x, d.trail[i + 1].y);
+        }
+      }
+      ctx.stroke();
+    }
+  }
+
+  // All dots in one path + fill call
+  let [dh, ds, dl] = palette[0];
+  ctx.fillStyle = `hsla(${dh},${ds}%,${dl}%,${alpha / 100})`;
+  ctx.beginPath();
+  for (let d of dots) {
+    ctx.moveTo(d.dx + d.sz / 2, d.dy);
+    ctx.arc(d.dx, d.dy, d.sz / 2, 0, Math.PI * 2);
+  }
+  ctx.fill();
+
+  ctx.restore();
 }
 
 // Fills a tapered capsule with dots; each dot has a fluid multi-point trail through history
@@ -855,23 +897,7 @@ function dotFillSegment(a, b, ratioA, ratioB, dotSize, spacing, palette, alpha, 
     }
   }
 
-  // Pass 1: fluid trails — connected segments with taper, palette[2]→palette[1]→palette[0]
-  if (histGeo.length > 0) {
-    for (let d of dots) {
-      for (let i = 0; i < d.trail.length - 1; i++) {
-        let progress = i / (d.trail.length - 1);
-        let [ph, ps, pl] = lerpPalette3(palette, progress);
-        stroke(ph, ps, pl, lerp(0, alpha * 0.55, pow(progress, 1.2)));
-        strokeWeight(lerp(0.4, dotSize * 1.3, progress));
-        line(d.trail[i].x, d.trail[i].y, d.trail[i + 1].x, d.trail[i + 1].y);
-      }
-    }
-  }
-
-  // Pass 2: dots at current position — tip color (palette[0])
-  noStroke();
-  fill(palette[0][0], palette[0][1], palette[0][2], alpha);
-  for (let d of dots) ellipse(d.dx, d.dy, d.sz, d.sz);
+  renderDotsAndTrails(dots, palette, dotSize, alpha);
 }
 
 // Returns true if point (x,y) is inside the tapered capsule between a and b
@@ -952,20 +978,7 @@ function dotFillTorso(ls, rs, lh, rh, dotSize, spacing, palette, alpha, lsH = []
     }
   }
 
-  if (histGeo.length > 0) {
-    for (let d of dots) {
-      for (let i = 0; i < d.trail.length - 1; i++) {
-        let progress = i / (d.trail.length - 1);
-        let [ph, ps, pl] = lerpPalette3(palette, progress);
-        stroke(ph, ps, pl, lerp(0, alpha * 0.55, pow(progress, 1.2)));
-        strokeWeight(lerp(0.4, dotSize * 1.3, progress));
-        line(d.trail[i].x, d.trail[i].y, d.trail[i + 1].x, d.trail[i + 1].y);
-      }
-    }
-  }
-  noStroke();
-  fill(palette[0][0], palette[0][1], palette[0][2], alpha);
-  for (let d of dots) ellipse(d.dx, d.dy, d.sz, d.sz);
+  renderDotsAndTrails(dots, palette, dotSize, alpha);
 }
 
 function dotFillEllipse(cx, cy, rx, ry, dotSize, spacing, palette, alpha, cxHist = [], cyHist = []) {
@@ -993,20 +1006,7 @@ function dotFillEllipse(cx, cy, rx, ry, dotSize, spacing, palette, alpha, cxHist
     }
   }
 
-  if (hasHist) {
-    for (let d of dots) {
-      for (let i = 0; i < d.trail.length - 1; i++) {
-        let progress = i / (d.trail.length - 1);
-        let [ph, ps, pl] = lerpPalette3(palette, progress);
-        stroke(ph, ps, pl, lerp(0, alpha * 0.55, pow(progress, 1.2)));
-        strokeWeight(lerp(0.4, dotSize * 1.3, progress));
-        line(d.trail[i].x, d.trail[i].y, d.trail[i + 1].x, d.trail[i + 1].y);
-      }
-    }
-  }
-  noStroke();
-  fill(palette[0][0], palette[0][1], palette[0][2], alpha);
-  for (let d of dots) ellipse(d.dx, d.dy, d.sz, d.sz);
+  renderDotsAndTrails(dots, palette, dotSize, alpha);
 }
 
 // Tapered capsule: wide at joint a, narrow at joint b
