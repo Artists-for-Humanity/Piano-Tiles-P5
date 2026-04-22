@@ -12,6 +12,10 @@ let shapeModeToggle;
 let useShapeMode = false;
 let exportButton;
 
+// image overlay toggle
+let imageOverlayToggle;
+let showImageOverlay = true;
+
 // dimension tracking
 let dimensionHistory = [];
 const MAX_HISTORY_FRAMES = 300;
@@ -67,15 +71,15 @@ const BODY_PART_COLORS = {
 };
 
 // tuning
-const SMOOTHING = 0.25;
+const SMOOTHING = 0.50;
 const MATCH_DISTANCE = 180;   // max px to match same person
 const MAX_MISSING_FRAMES = 20;
 const MAX_TRACKED_PEOPLE = 5;
 const MIN_CONFIDENCE = 0.2;
 
 // color trail
-const TRAIL_LENGTH = 10;       // number of ghost frames kept
-const TRAIL_SAMPLE_RATE = 2;   // capture a snapshot every N draw frames
+const TRAIL_LENGTH = 15;       // number of ghost frames kept
+const TRAIL_SAMPLE_RATE = 3;   // capture a snapshot every N draw frames
 
 function preload() {
 
@@ -167,6 +171,17 @@ function setup() {
       dimensionHistory = [];
       dimensionStats = {};
     }
+  });
+
+  // Image overlay toggle
+  imageOverlayToggle = createCheckbox(" Show image overlay", true);
+  imageOverlayToggle.parent("checkboxContainer");
+  imageOverlayToggle.style("color", "white");
+  imageOverlayToggle.style("font-size", "18px");
+  imageOverlayToggle.style("display", "block");
+  imageOverlayToggle.style("margin-bottom", "10px");
+  imageOverlayToggle.changed(() => {
+    showImageOverlay = imageOverlayToggle.checked();
   });
 
   // Export button
@@ -452,8 +467,8 @@ function drawScrapbookBody(person, id) {
   if (!useShapeMode && person.poseHistory.length > 0) {
     for (let t = 0; t < person.poseHistory.length; t++) {
       let progress = t / (person.poseHistory.length - 1 || 1); // 0 = oldest, 1 = newest
-      let alpha = lerp(15, 90, progress);
-      let hueShift = lerp(180, 60, progress); // older = complementary hue, newer = closer to accent
+      let alpha = lerp(0, 55, pow(progress, 2.5));
+      let hueShift = lerp(200, 80, progress); // older = complementary hue, newer = closer to accent
       let tintHue = (person.accent + hueShift) % 360;
       drawBodyAtSnapshot(person, person.poseHistory[t], alpha, tintHue);
     }
@@ -477,11 +492,10 @@ function drawScrapbookBody(person, id) {
     drawBodyShape(images["chest"], shoulderCenter, hipCenter, "chest", id, 0.8);
 
     drawBodyShape(images["head"], nose, shoulderCenter, "head", id, 1.2, 0.25);
-  } else {
+  } else if (showImageOverlay) {
     // In image mode, use artistic scale factors for collage effect
-    // Apply a per-person hue tint to the live frame
-    colorMode(HSL);
-    tint(person.accent % 360, 70, 65, 200);
+    noTint();
+    colorMode(RGB);
 
     drawBodyImage(images["left-arm"], leftElbow, leftWrist, .55, 0, false);
     drawBodyImage(images["left-shoulder"], leftShoulder, leftElbow, .5, 0, false);
@@ -685,27 +699,84 @@ function drawBodyAtSnapshot(person, pts, alpha, tintHue) {
       !leftWrist || !rightWrist || !leftKnee || !rightKnee ||
       !leftAnkle || !rightAnkle) return;
 
-  let images = characterImageSets[person.characterIndex] || characterImageSets[0];
   let shoulderCenter = midpoint(leftShoulder, rightShoulder);
   let hipCenter      = midpoint(leftHip, rightHip);
-  let adjustedNose   = createVector(nose.x, nose.y - 40);
 
   colorMode(HSL);
-  tint(tintHue % 360, 90, 60, alpha);
+  noStroke();
 
-  drawBodyImage(images["left-arm"],       leftElbow,     leftWrist,     .55, 0, false);
-  drawBodyImage(images["left-shoulder"],  leftShoulder,  leftElbow,     .5,  0, false);
-  drawBodyImage(images["right-arm"],      rightElbow,    rightWrist,    .55, 0, false);
-  drawBodyImage(images["right-shoulder"], rightShoulder, rightElbow,    .5,  0, false);
-  drawBodyImage(images["left-leg"],       leftKnee,      leftAnkle,     .4,  0, false);
-  drawBodyImage(images["left-thigh"],     leftHip,       leftKnee,      .4,  0, false);
-  drawBodyImage(images["right-leg"],      rightKnee,     rightAnkle,    .8,  0, false);
-  drawBodyImage(images["right-thigh"],    rightHip,      rightKnee,     .4,  0, false);
-  drawBodyImage(images["chest"],          shoulderCenter, hipCenter,    .8,  0, false);
-  drawBodyImage(images["head"],           adjustedNose,  shoulderCenter, 1.2, 0, false);
+  // Iridescent hue: base shifts over time, each body section offset by ~30°
+  let shimmer = (frameCount * 1.2) % 360;
+  let base    = (tintHue + shimmer) % 360;
 
-  noTint();
+  // Arms — taper from shoulder to wrist
+  fill((base)       % 360, 60, 55, alpha); drawTaperedLimb(leftShoulder,  leftElbow,  0.40, 0.30);
+  fill((base + 15)  % 360, 60, 55, alpha); drawTaperedLimb(leftElbow,     leftWrist,  0.30, 0.18);
+  fill((base + 30)  % 360, 60, 55, alpha); drawTaperedLimb(rightShoulder, rightElbow, 0.40, 0.30);
+  fill((base + 45)  % 360, 60, 55, alpha); drawTaperedLimb(rightElbow,    rightWrist, 0.30, 0.18);
+
+  // Legs — taper from hip to ankle
+  fill((base + 60)  % 360, 60, 55, alpha); drawTaperedLimb(leftHip,   leftKnee,   0.48, 0.36);
+  fill((base + 75)  % 360, 60, 55, alpha); drawTaperedLimb(leftKnee,  leftAnkle,  0.36, 0.22);
+  fill((base + 90)  % 360, 60, 55, alpha); drawTaperedLimb(rightHip,  rightKnee,  0.48, 0.36);
+  fill((base + 105) % 360, 60, 55, alpha); drawTaperedLimb(rightKnee, rightAnkle, 0.36, 0.22);
+
+  // Torso
+  fill((base + 120) % 360, 60, 55, alpha);
+  drawTorsoSilhouette(leftShoulder, rightShoulder, leftHip, rightHip);
+
+  // Head
+  fill((base + 150) % 360, 60, 55, alpha);
+  let headLen = dist(nose.x, nose.y, shoulderCenter.x, shoulderCenter.y);
+  let headCY = nose.y - headLen * 0.15;
+  ellipseMode(CENTER);
+  ellipse(nose.x, headCY, headLen * 0.82, headLen * 0.92);
+
   colorMode(RGB);
+}
+
+// Tapered capsule: wide at joint a, narrow at joint b
+function drawTaperedLimb(a, b, ratioA, ratioB) {
+  let len   = dist(a.x, a.y, b.x, b.y);
+  let angle = atan2(b.y - a.y, b.x - a.x);
+  let px    = cos(angle + HALF_PI);
+  let py    = sin(angle + HALF_PI);
+
+  let hwA = (len * ratioA) / 2;
+  let hwB = (len * ratioB) / 2;
+
+  noStroke();
+  beginShape();
+  vertex(a.x + px * hwA, a.y + py * hwA);
+  vertex(b.x + px * hwB, b.y + py * hwB);
+  vertex(b.x - px * hwB, b.y - py * hwB);
+  vertex(a.x - px * hwA, a.y - py * hwA);
+  endShape(CLOSE);
+
+  // Rounded caps
+  ellipseMode(CENTER);
+  ellipse(a.x, a.y, len * ratioA, len * ratioA);
+  ellipse(b.x, b.y, len * ratioB, len * ratioB);
+}
+
+// Torso as a trapezoid following actual shoulder/hip keypoints
+function drawTorsoSilhouette(ls, rs, lh, rh) {
+  let sHW = dist(ls.x, ls.y, rs.x, rs.y) * 0.46;
+  let hHW = dist(lh.x, lh.y, rh.x, rh.y) * 0.46;
+
+  let sMid  = midpoint(ls, rs);
+  let hMid  = midpoint(lh, rh);
+  let angle = atan2(hMid.y - sMid.y, hMid.x - sMid.x);
+  let px    = cos(angle + HALF_PI);
+  let py    = sin(angle + HALF_PI);
+
+  noStroke();
+  beginShape();
+  vertex(sMid.x + px * sHW, sMid.y + py * sHW);
+  vertex(hMid.x + px * hHW, hMid.y + py * hHW);
+  vertex(hMid.x - px * hHW, hMid.y - py * hHW);
+  vertex(sMid.x - px * sHW, sMid.y - py * sHW);
+  endShape(CLOSE);
 }
 
 /* =========================
