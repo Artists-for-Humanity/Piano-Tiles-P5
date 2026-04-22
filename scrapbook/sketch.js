@@ -71,10 +71,10 @@ const BODY_PART_COLORS = {
 };
 
 // tuning
-const SMOOTHING = 0.12;
+const SMOOTHING = 0.06;
 const MATCH_DISTANCE = 180;   // max px to match same person
 const MAX_MISSING_FRAMES = 20;
-const MAX_TRACKED_PEOPLE = 5;
+const MAX_TRACKED_PEOPLE = 10;
 const MIN_CONFIDENCE = 0.2;
 
 // color trail
@@ -723,7 +723,7 @@ function drawBodyAtSnapshot(person, pts, alpha, tintHue, ptsHistory = []) {
   // Subsample history to ~8 evenly-spaced frames for fluid trails
   function hist(name) {
     if (ptsHistory.length === 0) return [];
-    let step = max(1, floor(ptsHistory.length / 8));
+    let step = max(1, floor(ptsHistory.length / 14));
     let out  = [];
     for (let i = 0; i < ptsHistory.length; i += step) {
       let p = ptsHistory[i][name];
