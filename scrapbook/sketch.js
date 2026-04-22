@@ -70,6 +70,15 @@ const BODY_PART_COLORS = {
   "right-leg": [255, 120, 50]     // orange
 };
 
+// Per-instance color palettes — 3 seed colors, shifted per person
+// [hue, sat, lit] in HSL. Trail: palette[2]=tail → palette[1]=mid → palette[0]=tip
+const PALETTE_SEEDS = [
+  [27,  90, 67],   // #F6A25E warm orange
+  [315, 85, 69],   // #F36CC6 vibrant pink
+  [220, 45, 20]    // #1C2A4A deep dark blue
+];
+const PALETTE_HUE_SHIFT = 42; // degrees shifted per additional person
+
 // tuning
 const SMOOTHING = 0.06;
 const MATCH_DISTANCE = 180;   // max px to match same person
@@ -300,6 +309,9 @@ function createTrackedPerson(pose, center) {
 
   let characterIndex = (Object.keys(trackedPeople).length) % characterImageSets.length;
 
+  let shift   = (Object.keys(trackedPeople).length * PALETTE_HUE_SHIFT) % 360;
+  let palette = PALETTE_SEEDS.map(([h, s, l]) => [(h + shift) % 360, s, l]);
+
   trackedPeople[id] = {
     id,
     smoothPoints,
@@ -307,7 +319,8 @@ function createTrackedPerson(pose, center) {
     lastSeen: frameCount,
     accent: random(360),
     characterIndex,
-    poseHistory: []
+    poseHistory: [],
+    palette
   };
 }
 
@@ -466,9 +479,7 @@ function drawScrapbookBody(person, id) {
 
   // --- Single dot layer with per-dot fluid trails ---
   if (!useShapeMode) {
-    let shimmer = (frameCount * 1.2) % 360;
-    let base    = (person.accent + shimmer) % 360;
-    drawBodyAtSnapshot(person, person.smoothPoints, 85, base, person.poseHistory);
+    drawBodyAtSnapshot(person, person.smoothPoints, 85, person.palette, person.poseHistory);
   }
 
   // Render body parts (either images or shapes based on mode)
@@ -673,6 +684,31 @@ function drawBodyShape(img, a, b, partName, personId, scale = 1, offsetY = 0) {
    COLOR TRAIL
 ========================= */
 
+// Shortest-path hue interpolation (avoids the long way around the color wheel)
+function lerpHue(h1, h2, t) {
+  let d = ((h2 - h1 + 540) % 360) - 180;
+  return (h1 + d * t + 360) % 360;
+}
+
+// 3-stop palette lerp: t=0 → palette[2] (tail/dark), t=0.5 → palette[1] (mid), t=1 → palette[0] (tip/bright)
+function lerpPalette3(palette, t) {
+  if (t <= 0.5) {
+    let u = t * 2;
+    return [
+      lerpHue(palette[2][0], palette[1][0], u),
+      lerp(palette[2][1], palette[1][1], u),
+      lerp(palette[2][2], palette[1][2], u)
+    ];
+  } else {
+    let u = (t - 0.5) * 2;
+    return [
+      lerpHue(palette[1][0], palette[0][0], u),
+      lerp(palette[1][1], palette[0][1], u),
+      lerp(palette[1][2], palette[0][2], u)
+    ];
+  }
+}
+
 // Returns a keypoint map linearly interpolated between two snapshots
 function lerpSnapshots(ptsA, ptsB, t) {
   let result = {};
@@ -690,7 +726,7 @@ function lerpSnapshots(ptsA, ptsB, t) {
 }
 
 
-function drawBodyAtSnapshot(person, pts, alpha, tintHue, ptsHistory = []) {
+function drawBodyAtSnapshot(person, pts, alpha, palette, ptsHistory = []) {
   let nose          = pts["nose"];
   let leftShoulder  = pts["left_shoulder"];
   let rightShoulder = pts["right_shoulder"];
@@ -715,12 +751,10 @@ function drawBodyAtSnapshot(person, pts, alpha, tintHue, ptsHistory = []) {
   colorMode(HSL);
   ellipseMode(CENTER);
 
-  let shimmer = (frameCount * 1.2) % 360;
-  let base    = (tintHue + shimmer) % 360;
   const DOT = 2;
   const GAP = 6;
 
-  // Subsample history to ~8 evenly-spaced frames for fluid trails
+  // Subsample history to ~14 evenly-spaced frames for fluid trails
   function hist(name) {
     if (ptsHistory.length === 0) return [];
     let step = max(1, floor(ptsHistory.length / 14));
@@ -733,19 +767,19 @@ function drawBodyAtSnapshot(person, pts, alpha, tintHue, ptsHistory = []) {
   }
 
   // Arms
-  dotFillSegment(leftShoulder,  leftElbow,  0.40, 0.30, DOT, GAP, (base)      % 360, alpha, hist("left_shoulder"),  hist("left_elbow"));
-  dotFillSegment(leftElbow,     leftWrist,  0.30, 0.18, DOT, GAP, (base + 15) % 360, alpha, hist("left_elbow"),     hist("left_wrist"));
-  dotFillSegment(rightShoulder, rightElbow, 0.40, 0.30, DOT, GAP, (base + 30) % 360, alpha, hist("right_shoulder"), hist("right_elbow"));
-  dotFillSegment(rightElbow,    rightWrist, 0.30, 0.18, DOT, GAP, (base + 45) % 360, alpha, hist("right_elbow"),    hist("right_wrist"));
+  dotFillSegment(leftShoulder,  leftElbow,  0.40, 0.30, DOT, GAP, palette, alpha, hist("left_shoulder"),  hist("left_elbow"));
+  dotFillSegment(leftElbow,     leftWrist,  0.30, 0.18, DOT, GAP, palette, alpha, hist("left_elbow"),     hist("left_wrist"));
+  dotFillSegment(rightShoulder, rightElbow, 0.40, 0.30, DOT, GAP, palette, alpha, hist("right_shoulder"), hist("right_elbow"));
+  dotFillSegment(rightElbow,    rightWrist, 0.30, 0.18, DOT, GAP, palette, alpha, hist("right_elbow"),    hist("right_wrist"));
 
   // Legs
-  dotFillSegment(leftHip,   leftKnee,   0.48, 0.36, DOT, GAP, (base + 60)  % 360, alpha, hist("left_hip"),   hist("left_knee"));
-  dotFillSegment(leftKnee,  leftAnkle,  0.36, 0.22, DOT, GAP, (base + 75)  % 360, alpha, hist("left_knee"),  hist("left_ankle"));
-  dotFillSegment(rightHip,  rightKnee,  0.48, 0.36, DOT, GAP, (base + 90)  % 360, alpha, hist("right_hip"),  hist("right_knee"));
-  dotFillSegment(rightKnee, rightAnkle, 0.36, 0.22, DOT, GAP, (base + 105) % 360, alpha, hist("right_knee"), hist("right_ankle"));
+  dotFillSegment(leftHip,   leftKnee,   0.48, 0.36, DOT, GAP, palette, alpha, hist("left_hip"),   hist("left_knee"));
+  dotFillSegment(leftKnee,  leftAnkle,  0.36, 0.22, DOT, GAP, palette, alpha, hist("left_knee"),  hist("left_ankle"));
+  dotFillSegment(rightHip,  rightKnee,  0.48, 0.36, DOT, GAP, palette, alpha, hist("right_hip"),  hist("right_knee"));
+  dotFillSegment(rightKnee, rightAnkle, 0.36, 0.22, DOT, GAP, palette, alpha, hist("right_knee"), hist("right_ankle"));
 
   // Torso
-  dotFillTorso(leftShoulder, rightShoulder, leftHip, rightHip, DOT, GAP, (base + 120) % 360, alpha,
+  dotFillTorso(leftShoulder, rightShoulder, leftHip, rightHip, DOT, GAP, palette, alpha,
     hist("left_shoulder"), hist("right_shoulder"), hist("left_hip"), hist("right_hip"));
 
   // Head
@@ -761,14 +795,14 @@ function drawBodyAtSnapshot(person, pts, alpha, tintHue, ptsHistory = []) {
     return p.y - hl * 0.15;
   });
   dotFillEllipse(nose.x, nose.y - headLen * 0.15, headLen * 0.41, headLen * 0.46,
-    DOT, GAP, (base + 150) % 360, alpha, cxHistory, cyHistory);
+    DOT, GAP, palette, alpha, cxHistory, cyHistory);
 
   noStroke();
   colorMode(RGB);
 }
 
 // Fills a tapered capsule with dots; each dot has a fluid multi-point trail through history
-function dotFillSegment(a, b, ratioA, ratioB, dotSize, spacing, hue, alpha, aHist = [], bHist = []) {
+function dotFillSegment(a, b, ratioA, ratioB, dotSize, spacing, palette, alpha, aHist = [], bHist = []) {
   let len = dist(a.x, a.y, b.x, b.y);
   if (len < 1) return;
   let angle = atan2(b.y - a.y, b.x - a.x);
@@ -821,21 +855,22 @@ function dotFillSegment(a, b, ratioA, ratioB, dotSize, spacing, hue, alpha, aHis
     }
   }
 
-  // Pass 1: fluid trails — connected segments with taper
+  // Pass 1: fluid trails — connected segments with taper, palette[2]→palette[1]→palette[0]
   if (histGeo.length > 0) {
     for (let d of dots) {
       for (let i = 0; i < d.trail.length - 1; i++) {
         let progress = i / (d.trail.length - 1);
-        stroke(hue, 85, 68, lerp(0, alpha * 0.55, pow(progress, 1.2)));
+        let [ph, ps, pl] = lerpPalette3(palette, progress);
+        stroke(ph, ps, pl, lerp(0, alpha * 0.55, pow(progress, 1.2)));
         strokeWeight(lerp(0.4, dotSize * 1.3, progress));
         line(d.trail[i].x, d.trail[i].y, d.trail[i + 1].x, d.trail[i + 1].y);
       }
     }
   }
 
-  // Pass 2: dots at current position
+  // Pass 2: dots at current position — tip color (palette[0])
   noStroke();
-  fill(hue, 85, 60, alpha);
+  fill(palette[0][0], palette[0][1], palette[0][2], alpha);
   for (let d of dots) ellipse(d.dx, d.dy, d.sz, d.sz);
 }
 
@@ -855,7 +890,7 @@ function inTaperedCapsule(x, y, a, b, len, ratioA, ratioB, lx, ly, nx, ny) {
   return perp <= lerp(len * ratioA, len * ratioB, along / len) / 2;
 }
 
-function dotFillTorso(ls, rs, lh, rh, dotSize, spacing, hue, alpha, lsH = [], rsH = [], lhH = [], rhH = []) {
+function dotFillTorso(ls, rs, lh, rh, dotSize, spacing, palette, alpha, lsH = [], rsH = [], lhH = [], rhH = []) {
   let sMid = midpoint(ls, rs);
   let hMid = midpoint(lh, rh);
   let sHW  = dist(ls.x, ls.y, rs.x, rs.y) * 0.46;
@@ -921,18 +956,19 @@ function dotFillTorso(ls, rs, lh, rh, dotSize, spacing, hue, alpha, lsH = [], rs
     for (let d of dots) {
       for (let i = 0; i < d.trail.length - 1; i++) {
         let progress = i / (d.trail.length - 1);
-        stroke(hue, 85, 68, lerp(0, alpha * 0.55, pow(progress, 1.2)));
+        let [ph, ps, pl] = lerpPalette3(palette, progress);
+        stroke(ph, ps, pl, lerp(0, alpha * 0.55, pow(progress, 1.2)));
         strokeWeight(lerp(0.4, dotSize * 1.3, progress));
         line(d.trail[i].x, d.trail[i].y, d.trail[i + 1].x, d.trail[i + 1].y);
       }
     }
   }
   noStroke();
-  fill(hue, 85, 60, alpha);
+  fill(palette[0][0], palette[0][1], palette[0][2], alpha);
   for (let d of dots) ellipse(d.dx, d.dy, d.sz, d.sz);
 }
 
-function dotFillEllipse(cx, cy, rx, ry, dotSize, spacing, hue, alpha, cxHist = [], cyHist = []) {
+function dotFillEllipse(cx, cy, rx, ry, dotSize, spacing, palette, alpha, cxHist = [], cyHist = []) {
   let hasHist = cxHist.length > 0 && cyHist.length > 0;
   let jitter  = spacing * 0.25;
   let dots    = [];
@@ -961,14 +997,15 @@ function dotFillEllipse(cx, cy, rx, ry, dotSize, spacing, hue, alpha, cxHist = [
     for (let d of dots) {
       for (let i = 0; i < d.trail.length - 1; i++) {
         let progress = i / (d.trail.length - 1);
-        stroke(hue, 85, 68, lerp(0, alpha * 0.55, pow(progress, 1.2)));
+        let [ph, ps, pl] = lerpPalette3(palette, progress);
+        stroke(ph, ps, pl, lerp(0, alpha * 0.55, pow(progress, 1.2)));
         strokeWeight(lerp(0.4, dotSize * 1.3, progress));
         line(d.trail[i].x, d.trail[i].y, d.trail[i + 1].x, d.trail[i + 1].y);
       }
     }
   }
   noStroke();
-  fill(hue, 85, 60, alpha);
+  fill(palette[0][0], palette[0][1], palette[0][2], alpha);
   for (let d of dots) ellipse(d.dx, d.dy, d.sz, d.sz);
 }
 
