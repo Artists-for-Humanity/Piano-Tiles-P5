@@ -717,8 +717,8 @@ function drawBodyAtSnapshot(person, pts, alpha, tintHue, ptsHistory = []) {
 
   let shimmer = (frameCount * 1.2) % 360;
   let base    = (tintHue + shimmer) % 360;
-  const DOT = 6;
-  const GAP = 20;
+  const DOT = 4;
+  const GAP = 16;
 
   // Subsample history to ~8 evenly-spaced frames for fluid trails
   function hist(name) {
