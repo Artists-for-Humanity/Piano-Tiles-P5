@@ -71,15 +71,15 @@ const BODY_PART_COLORS = {
 };
 
 // tuning
-const SMOOTHING = 0.50;
+const SMOOTHING = 0.12;
 const MATCH_DISTANCE = 180;   // max px to match same person
 const MAX_MISSING_FRAMES = 20;
 const MAX_TRACKED_PEOPLE = 5;
 const MIN_CONFIDENCE = 0.2;
 
 // color trail
-const TRAIL_LENGTH = 15;       // number of ghost frames kept
-const TRAIL_SAMPLE_RATE = 3;   // capture a snapshot every N draw frames
+const TRAIL_LENGTH = 60;       // number of ghost frames kept
+const TRAIL_SAMPLE_RATE = 1;   // capture a snapshot every N draw frames
 
 function preload() {
 
@@ -102,7 +102,7 @@ function preload() {
   }
 
     characterImageSets = [
-    loadCharacterImages("lebron"),
+    loadCharacterImages("jordan"),
     loadCharacterImages("ice-cube"),
     // Add more folders here as needed
   ];
@@ -422,6 +422,7 @@ function drawScrapbookBody(person, id) {
   let shoulderCenter = midpoint(leftShoulder, rightShoulder);
   let hipCenter = midpoint(leftHip, rightHip);
 
+
   let shoulderWidth = dist(
     leftShoulder.x, leftShoulder.y,
     rightShoulder.x, rightShoulder.y
@@ -463,15 +464,11 @@ function drawScrapbookBody(person, id) {
 
   let images = characterImageSets[person.characterIndex] || characterImageSets[0];
 
-  // --- Delayed color trail ---
-  if (!useShapeMode && person.poseHistory.length > 0) {
-    for (let t = 0; t < person.poseHistory.length; t++) {
-      let progress = t / (person.poseHistory.length - 1 || 1); // 0 = oldest, 1 = newest
-      let alpha = lerp(0, 55, pow(progress, 2.5));
-      let hueShift = lerp(200, 80, progress); // older = complementary hue, newer = closer to accent
-      let tintHue = (person.accent + hueShift) % 360;
-      drawBodyAtSnapshot(person, person.poseHistory[t], alpha, tintHue);
-    }
+  // --- Single dot layer with per-dot fluid trails ---
+  if (!useShapeMode) {
+    let shimmer = (frameCount * 1.2) % 360;
+    let base    = (person.accent + shimmer) % 360;
+    drawBodyAtSnapshot(person, person.smoothPoints, 85, base, person.poseHistory);
   }
 
   // Render body parts (either images or shapes based on mode)
@@ -497,29 +494,25 @@ function drawScrapbookBody(person, id) {
     noTint();
     colorMode(RGB);
 
-    drawBodyImage(images["left-arm"], leftElbow, leftWrist, .55, 0, false);
-    drawBodyImage(images["left-shoulder"], leftShoulder, leftElbow, .5, 0, false);
+    drawBodyImage(images["left-leg"],       leftKnee,      leftAnkle,      .4   * 1.05, 0, false);
+    drawBodyImage(images["left-thigh"],     leftHip,       leftKnee,       .4   * 1.05, 0, false);
+    drawBodyImage(images["right-leg"],      rightKnee,     rightAnkle,     .4   * 1.05, 0, false);
+    drawBodyImage(images["right-thigh"],    rightHip,      rightKnee,      .4   * 1.05, 0, false);
+    drawBodyImage(images["chest"],          shoulderCenter, hipCenter,     .8   * 0.95, 0, false);
+    drawBodyImage(images["left-shoulder"],  leftShoulder,  leftElbow,      .5 * 0.85 * 1.05, 0, false);
+    drawBodyImage(images["right-shoulder"], rightShoulder, rightElbow,     .5 * 0.85 * 1.05, 0, false);
 
-    drawBodyImage(images["right-arm"], rightElbow, rightWrist, .55, 0, false);
-    drawBodyImage(images["right-shoulder"], rightShoulder, rightElbow, .5, 0, false);
+    // Arms: shifted 15px inward
+    let lElbowIn = createVector(leftElbow.x  + 15, leftElbow.y);
+    let lWristIn = createVector(leftWrist.x  + 15, leftWrist.y);
+    let rElbowIn = createVector(rightElbow.x - 15, rightElbow.y);
+    let rWristIn = createVector(rightWrist.x - 15, rightWrist.y);
+    drawBodyImage(images["left-arm"],  lElbowIn, lWristIn, .55 * 0.85 * 0.9 * 1.05, 0, false);
+    drawBodyImage(images["right-arm"], rElbowIn, rWristIn, .55 * 0.85 * 0.9 * 1.05, 0, false);
 
-    drawBodyImage(images["left-leg"], leftKnee, leftAnkle, .4, 0, false);
-    drawBodyImage(images["left-thigh"], leftHip, leftKnee, .4, 0, false);
-
-    drawBodyImage(images["right-leg"], rightKnee, rightAnkle, .8, 0, false);
-    drawBodyImage(images["right-thigh"], rightHip, rightKnee, .4, 0, false);
-
-    drawBodyImage(images["chest"], shoulderCenter, hipCenter, .8, 0, false);
-
-    drawBodyImage(bodyPartImages["left-arm"], leftElbow, leftWrist, .55, 0, false);
-    drawBodyImage(bodyPartImages["left-shoulder"], leftShoulder, leftElbow, .5, 0, false);
-
-    drawBodyImage(bodyPartImages["right-arm"], rightElbow, rightWrist, .55, 0, false);
-    drawBodyImage(bodyPartImages["right-shoulder"], rightShoulder, rightElbow, .5, 0, false);
-
-    // Adjust head position up by 10px
-    let adjustedNose = createVector(nose.x, nose.y - 40);
-    drawBodyImage(images["head"], adjustedNose, shoulderCenter, 1.2, 0, false);
+    // Head: shifted up 140px
+    let adjustedNose = createVector(nose.x, nose.y - 140);
+    drawBodyImage(images["head"], adjustedNose, shoulderCenter, 0.675, 0, false);
 
     noTint();
     colorMode(RGB);
@@ -679,7 +672,24 @@ function drawBodyShape(img, a, b, partName, personId, scale = 1, offsetY = 0) {
    COLOR TRAIL
 ========================= */
 
-function drawBodyAtSnapshot(person, pts, alpha, tintHue) {
+// Returns a keypoint map linearly interpolated between two snapshots
+function lerpSnapshots(ptsA, ptsB, t) {
+  let result = {};
+  for (let key in ptsA) {
+    if (ptsB[key]) {
+      result[key] = createVector(
+        lerp(ptsA[key].x, ptsB[key].x, t),
+        lerp(ptsA[key].y, ptsB[key].y, t)
+      );
+    } else {
+      result[key] = ptsA[key].copy();
+    }
+  }
+  return result;
+}
+
+
+function drawBodyAtSnapshot(person, pts, alpha, tintHue, ptsHistory = []) {
   let nose          = pts["nose"];
   let leftShoulder  = pts["left_shoulder"];
   let rightShoulder = pts["right_shoulder"];
@@ -700,39 +710,265 @@ function drawBodyAtSnapshot(person, pts, alpha, tintHue) {
       !leftAnkle || !rightAnkle) return;
 
   let shoulderCenter = midpoint(leftShoulder, rightShoulder);
-  let hipCenter      = midpoint(leftHip, rightHip);
 
   colorMode(HSL);
-  noStroke();
+  ellipseMode(CENTER);
 
-  // Iridescent hue: base shifts over time, each body section offset by ~30°
   let shimmer = (frameCount * 1.2) % 360;
   let base    = (tintHue + shimmer) % 360;
+  const DOT = 6;
+  const GAP = 22;
 
-  // Arms — taper from shoulder to wrist
-  fill((base)       % 360, 60, 55, alpha); drawTaperedLimb(leftShoulder,  leftElbow,  0.40, 0.30);
-  fill((base + 15)  % 360, 60, 55, alpha); drawTaperedLimb(leftElbow,     leftWrist,  0.30, 0.18);
-  fill((base + 30)  % 360, 60, 55, alpha); drawTaperedLimb(rightShoulder, rightElbow, 0.40, 0.30);
-  fill((base + 45)  % 360, 60, 55, alpha); drawTaperedLimb(rightElbow,    rightWrist, 0.30, 0.18);
+  // Subsample history to ~8 evenly-spaced frames for fluid trails
+  function hist(name) {
+    if (ptsHistory.length === 0) return [];
+    let step = max(1, floor(ptsHistory.length / 8));
+    let out  = [];
+    for (let i = 0; i < ptsHistory.length; i += step) {
+      let p = ptsHistory[i][name];
+      if (p) out.push(p);
+    }
+    return out;
+  }
 
-  // Legs — taper from hip to ankle
-  fill((base + 60)  % 360, 60, 55, alpha); drawTaperedLimb(leftHip,   leftKnee,   0.48, 0.36);
-  fill((base + 75)  % 360, 60, 55, alpha); drawTaperedLimb(leftKnee,  leftAnkle,  0.36, 0.22);
-  fill((base + 90)  % 360, 60, 55, alpha); drawTaperedLimb(rightHip,  rightKnee,  0.48, 0.36);
-  fill((base + 105) % 360, 60, 55, alpha); drawTaperedLimb(rightKnee, rightAnkle, 0.36, 0.22);
+  // Arms
+  dotFillSegment(leftShoulder,  leftElbow,  0.40, 0.30, DOT, GAP, (base)      % 360, alpha, hist("left_shoulder"),  hist("left_elbow"));
+  dotFillSegment(leftElbow,     leftWrist,  0.30, 0.18, DOT, GAP, (base + 15) % 360, alpha, hist("left_elbow"),     hist("left_wrist"));
+  dotFillSegment(rightShoulder, rightElbow, 0.40, 0.30, DOT, GAP, (base + 30) % 360, alpha, hist("right_shoulder"), hist("right_elbow"));
+  dotFillSegment(rightElbow,    rightWrist, 0.30, 0.18, DOT, GAP, (base + 45) % 360, alpha, hist("right_elbow"),    hist("right_wrist"));
+
+  // Legs
+  dotFillSegment(leftHip,   leftKnee,   0.48, 0.36, DOT, GAP, (base + 60)  % 360, alpha, hist("left_hip"),   hist("left_knee"));
+  dotFillSegment(leftKnee,  leftAnkle,  0.36, 0.22, DOT, GAP, (base + 75)  % 360, alpha, hist("left_knee"),  hist("left_ankle"));
+  dotFillSegment(rightHip,  rightKnee,  0.48, 0.36, DOT, GAP, (base + 90)  % 360, alpha, hist("right_hip"),  hist("right_knee"));
+  dotFillSegment(rightKnee, rightAnkle, 0.36, 0.22, DOT, GAP, (base + 105) % 360, alpha, hist("right_knee"), hist("right_ankle"));
 
   // Torso
-  fill((base + 120) % 360, 60, 55, alpha);
-  drawTorsoSilhouette(leftShoulder, rightShoulder, leftHip, rightHip);
+  dotFillTorso(leftShoulder, rightShoulder, leftHip, rightHip, DOT, GAP, (base + 120) % 360, alpha,
+    hist("left_shoulder"), hist("right_shoulder"), hist("left_hip"), hist("right_hip"));
 
   // Head
-  fill((base + 150) % 360, 60, 55, alpha);
-  let headLen = dist(nose.x, nose.y, shoulderCenter.x, shoulderCenter.y);
-  let headCY = nose.y - headLen * 0.15;
-  ellipseMode(CENTER);
-  ellipse(nose.x, headCY, headLen * 0.82, headLen * 0.92);
+  let headLen   = dist(nose.x, nose.y, shoulderCenter.x, shoulderCenter.y);
+  let noseHist  = hist("nose");
+  let lsHist    = hist("left_shoulder");
+  let rsHist    = hist("right_shoulder");
+  let cxHistory = noseHist.map(p => p.x);
+  let cyHistory = noseHist.map((p, i) => {
+    let ls = lsHist[i], rs = rsHist[i];
+    let sc = (ls && rs) ? midpoint(ls, rs) : shoulderCenter;
+    let hl = dist(p.x, p.y, sc.x, sc.y);
+    return p.y - hl * 0.15;
+  });
+  dotFillEllipse(nose.x, nose.y - headLen * 0.15, headLen * 0.41, headLen * 0.46,
+    DOT, GAP, (base + 150) % 360, alpha, cxHistory, cyHistory);
 
+  noStroke();
   colorMode(RGB);
+}
+
+// Fills a tapered capsule with dots; each dot has a fluid multi-point trail through history
+function dotFillSegment(a, b, ratioA, ratioB, dotSize, spacing, hue, alpha, aHist = [], bHist = []) {
+  let len = dist(a.x, a.y, b.x, b.y);
+  if (len < 1) return;
+  let angle = atan2(b.y - a.y, b.x - a.x);
+  let lx = cos(angle), ly = sin(angle);
+  let nx = -ly,        ny = lx;
+
+  // Precompute geometry for each history frame
+  let histGeo = [];
+  let hLen = min(aHist.length, bHist.length);
+  for (let i = 0; i < hLen; i++) {
+    let aH = aHist[i], bH = bHist[i];
+    if (!aH || !bH) continue;
+    let lH   = dist(aH.x, aH.y, bH.x, bH.y);
+    let angH = atan2(bH.y - aH.y, bH.x - aH.x);
+    histGeo.push({ aH, bH, lH, nxH: -sin(angH), nyH: cos(angH) });
+  }
+
+  let jitter = spacing * 0.25;
+  let steps  = max(1, floor(len / spacing));
+  let dots   = [];
+
+  for (let s = 0; s <= steps; s++) {
+    let t     = s / steps;
+    let cx    = lerp(a.x, b.x, t);
+    let cy    = lerp(a.y, b.y, t);
+    let halfW = lerp(len * ratioA, len * ratioB, t) / 2;
+    let wN    = max(1, floor((halfW * 2) / spacing));
+
+    for (let w = -wN; w <= wN; w++) {
+      let jx  = (noise(s * 0.4, w * 0.8)      - 0.5) * jitter * 2;
+      let jy  = (noise(s * 0.8 + 99, w * 0.4) - 0.5) * jitter * 2;
+      let off = wN > 0 ? (w / wN) * halfW : 0;
+      let dx  = cx + nx * off + jx;
+      let dy  = cy + ny * off + jy;
+      if (!inTaperedCapsule(dx, dy, a, b, len, ratioA, ratioB, lx, ly, nx, ny)) continue;
+
+      // Build trail: one position per history frame using same (s,w) parametric coords
+      let trail = [];
+      for (let g of histGeo) {
+        let cxH   = lerp(g.aH.x, g.bH.x, t);
+        let cyH   = lerp(g.aH.y, g.bH.y, t);
+        let hwH   = lerp(g.lH * ratioA, g.lH * ratioB, t) / 2;
+        let offH  = wN > 0 ? (w / wN) * hwH : 0;
+        trail.push({ x: cxH + g.nxH * offH + jx, y: cyH + g.nyH * offH + jy });
+      }
+      trail.push({ x: dx, y: dy }); // current position at tip
+
+      let sz = dotSize * (0.65 + noise(s * 0.6 + 33, w * 0.6 + 33) * 0.7);
+      dots.push({ dx, dy, trail, sz });
+    }
+  }
+
+  // Pass 1: fluid trails — connected segments with taper
+  if (histGeo.length > 0) {
+    for (let d of dots) {
+      for (let i = 0; i < d.trail.length - 1; i++) {
+        let progress = i / (d.trail.length - 1);
+        stroke(hue, 85, 68, lerp(0, alpha * 0.55, pow(progress, 1.2)));
+        strokeWeight(lerp(0.4, dotSize * 1.3, progress));
+        line(d.trail[i].x, d.trail[i].y, d.trail[i + 1].x, d.trail[i + 1].y);
+      }
+    }
+  }
+
+  // Pass 2: dots at current position
+  noStroke();
+  fill(hue, 85, 60, alpha);
+  for (let d of dots) ellipse(d.dx, d.dy, d.sz, d.sz);
+}
+
+// Returns true if point (x,y) is inside the tapered capsule between a and b
+function inTaperedCapsule(x, y, a, b, len, ratioA, ratioB, lx, ly, nx, ny) {
+  let ax    = x - a.x, ay = y - a.y;
+  let along = ax * lx + ay * ly;
+  let perp  = abs(ax * nx + ay * ny);
+
+  if (along < 0) {
+    return (ax * ax + ay * ay) <= pow(len * ratioA / 2, 2);
+  }
+  if (along > len) {
+    let bx = x - b.x, by = y - b.y;
+    return (bx * bx + by * by) <= pow(len * ratioB / 2, 2);
+  }
+  return perp <= lerp(len * ratioA, len * ratioB, along / len) / 2;
+}
+
+function dotFillTorso(ls, rs, lh, rh, dotSize, spacing, hue, alpha, lsH = [], rsH = [], lhH = [], rhH = []) {
+  let sMid = midpoint(ls, rs);
+  let hMid = midpoint(lh, rh);
+  let sHW  = dist(ls.x, ls.y, rs.x, rs.y) * 0.46;
+  let hHW  = dist(lh.x, lh.y, rh.x, rh.y) * 0.46;
+  let len  = dist(sMid.x, sMid.y, hMid.x, hMid.y);
+  if (len < 1) return;
+
+  let angle = atan2(hMid.y - sMid.y, hMid.x - sMid.x);
+  let lx = cos(angle), ly = sin(angle);
+  let nx = -ly,        ny = lx;
+
+  // Precompute torso geometry per history frame
+  let histGeo = [];
+  let hLen = min(lsH.length, rsH.length, lhH.length, rhH.length);
+  for (let i = 0; i < hLen; i++) {
+    if (!lsH[i] || !rsH[i] || !lhH[i] || !rhH[i]) continue;
+    let smH  = midpoint(lsH[i], rsH[i]);
+    let hmH  = midpoint(lhH[i], rhH[i]);
+    let sHWH = dist(lsH[i].x, lsH[i].y, rsH[i].x, rsH[i].y) * 0.46;
+    let hHWH = dist(lhH[i].x, lhH[i].y, rhH[i].x, rhH[i].y) * 0.46;
+    let angH = atan2(hmH.y - smH.y, hmH.x - smH.x);
+    histGeo.push({ smH, hmH, sHWH, hHWH, nxH: -sin(angH), nyH: cos(angH) });
+  }
+
+  let jitter = spacing * 0.25;
+  let steps  = max(1, floor(len / spacing));
+  let dots   = [];
+
+  for (let s = 0; s <= steps; s++) {
+    let t     = s / steps;
+    let cx    = lerp(sMid.x, hMid.x, t);
+    let cy    = lerp(sMid.y, hMid.y, t);
+    let halfW = lerp(sHW, hHW, t);
+    let wN    = max(1, floor((halfW * 2) / spacing));
+
+    for (let w = -wN; w <= wN; w++) {
+      let jx  = (noise(s * 0.4 + 200, w * 0.8 + 200) - 0.5) * jitter * 2;
+      let jy  = (noise(s * 0.8 + 300, w * 0.4 + 300) - 0.5) * jitter * 2;
+      let off = wN > 0 ? (w / wN) * halfW : 0;
+      let dx  = cx + nx * off + jx;
+      let dy  = cy + ny * off + jy;
+
+      let ax = dx - sMid.x, ay2 = dy - sMid.y;
+      if (ax * lx + ay2 * ly < 0 || ax * lx + ay2 * ly > len ||
+          abs(ax * nx + ay2 * ny) > lerp(sHW, hHW, (ax * lx + ay2 * ly) / len)) continue;
+
+      let trail = [];
+      for (let g of histGeo) {
+        let cxH  = lerp(g.smH.x, g.hmH.x, t);
+        let cyH  = lerp(g.smH.y, g.hmH.y, t);
+        let hwH  = lerp(g.sHWH, g.hHWH, t);
+        let offH = wN > 0 ? (w / wN) * hwH : 0;
+        trail.push({ x: cxH + g.nxH * offH + jx, y: cyH + g.nyH * offH + jy });
+      }
+      trail.push({ x: dx, y: dy });
+
+      let sz = dotSize * (0.65 + noise(s * 0.6 + 400, w * 0.6 + 400) * 0.7);
+      dots.push({ dx, dy, trail, sz });
+    }
+  }
+
+  if (histGeo.length > 0) {
+    for (let d of dots) {
+      for (let i = 0; i < d.trail.length - 1; i++) {
+        let progress = i / (d.trail.length - 1);
+        stroke(hue, 85, 68, lerp(0, alpha * 0.55, pow(progress, 1.2)));
+        strokeWeight(lerp(0.4, dotSize * 1.3, progress));
+        line(d.trail[i].x, d.trail[i].y, d.trail[i + 1].x, d.trail[i + 1].y);
+      }
+    }
+  }
+  noStroke();
+  fill(hue, 85, 60, alpha);
+  for (let d of dots) ellipse(d.dx, d.dy, d.sz, d.sz);
+}
+
+function dotFillEllipse(cx, cy, rx, ry, dotSize, spacing, hue, alpha, cxHist = [], cyHist = []) {
+  let hasHist = cxHist.length > 0 && cyHist.length > 0;
+  let jitter  = spacing * 0.25;
+  let dots    = [];
+
+  for (let x = -rx; x <= rx; x += spacing) {
+    for (let y = -ry; y <= ry; y += spacing) {
+      let jx = (noise(x * 0.05 + 500, y * 0.05 + 500) - 0.5) * jitter * 2;
+      let jy = (noise(x * 0.05 + 600, y * 0.05 + 600) - 0.5) * jitter * 2;
+      let sx = x + jx, sy = y + jy;
+      if ((sx * sx) / (rx * rx) + (sy * sy) / (ry * ry) > 1) continue;
+
+      // Trail: apply same local offset to each historical center
+      let trail = [];
+      let hLen  = min(cxHist.length, cyHist.length);
+      for (let i = 0; i < hLen; i++) {
+        trail.push({ x: cxHist[i] + sx, y: cyHist[i] + sy });
+      }
+      trail.push({ x: cx + sx, y: cy + sy });
+
+      let sz = dotSize * (0.65 + noise(x * 0.08 + 700, y * 0.08 + 700) * 0.7);
+      dots.push({ dx: cx + sx, dy: cy + sy, trail, sz });
+    }
+  }
+
+  if (hasHist) {
+    for (let d of dots) {
+      for (let i = 0; i < d.trail.length - 1; i++) {
+        let progress = i / (d.trail.length - 1);
+        stroke(hue, 85, 68, lerp(0, alpha * 0.55, pow(progress, 1.2)));
+        strokeWeight(lerp(0.4, dotSize * 1.3, progress));
+        line(d.trail[i].x, d.trail[i].y, d.trail[i + 1].x, d.trail[i + 1].y);
+      }
+    }
+  }
+  noStroke();
+  fill(hue, 85, 60, alpha);
+  for (let d of dots) ellipse(d.dx, d.dy, d.sz, d.sz);
 }
 
 // Tapered capsule: wide at joint a, narrow at joint b
