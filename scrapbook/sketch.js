@@ -811,14 +811,32 @@ function renderDotsAndTrails(dots, palette, dotSize, alpha) {
   ctx.lineCap = 'round';
 
   if (trailLen > 1) {
-    // Pre-compute colors once (not per-dot), then batch all dots at the same level into one path
+    // Glow pass: wider + low-opacity lines drawn first (simulates bloom without ctx.filter)
     for (let i = 0; i < trailLen - 1; i++) {
       let progress = i / (trailLen - 1);
       let [ph, ps, pl] = lerpPalette3(palette, progress);
-      let a  = lerp(0, alpha * 0.55, pow(progress, 1.2)) / 100;
-      let w  = lerp(0.4, dotSize * 1.3, progress);
-      ctx.strokeStyle = `hsla(${ph},${ps}%,${pl}%,${a})`;
-      ctx.lineWidth   = w;
+      let plBright = Math.min(100, pl + 15);
+      let a = lerp(0, alpha * 0.18, pow(progress, 1.2)) / 100;
+      ctx.strokeStyle = `hsla(${ph},${ps}%,${plBright}%,${a})`;
+      ctx.lineWidth   = lerp(2, dotSize * 4, progress);
+      ctx.beginPath();
+      for (let d of dots) {
+        if (i + 1 < d.trail.length) {
+          ctx.moveTo(d.trail[i].x,     d.trail[i].y);
+          ctx.lineTo(d.trail[i + 1].x, d.trail[i + 1].y);
+        }
+      }
+      ctx.stroke();
+    }
+
+    // Core pass: sharp trail at normal weight
+    for (let i = 0; i < trailLen - 1; i++) {
+      let progress = i / (trailLen - 1);
+      let [ph, ps, pl] = lerpPalette3(palette, progress);
+      let plBright = Math.min(100, pl + 15);
+      let a = lerp(0, alpha * 0.55, pow(progress, 1.2)) / 100;
+      ctx.strokeStyle = `hsla(${ph},${ps}%,${plBright}%,${a})`;
+      ctx.lineWidth   = lerp(0.4, dotSize * 1.3, progress);
       ctx.beginPath();
       for (let d of dots) {
         if (i + 1 < d.trail.length) {
@@ -832,7 +850,7 @@ function renderDotsAndTrails(dots, palette, dotSize, alpha) {
 
   // All dots in one path + fill call
   let [dh, ds, dl] = palette[0];
-  ctx.fillStyle = `hsla(${dh},${ds}%,${dl}%,${alpha / 100})`;
+  ctx.fillStyle = `hsla(${dh},${ds}%,${Math.min(100, dl + 15)}%,${alpha / 100})`;
   ctx.beginPath();
   for (let d of dots) {
     ctx.moveTo(d.dx + d.sz / 2, d.dy);
