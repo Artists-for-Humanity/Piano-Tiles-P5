@@ -1,36 +1,18 @@
 let video;
 let bodyPose;
 let poses = [];
-let bodyPartImages = {};
-
 
 let videoToggle;
 let showVideo = true;
 
-// shape mode toggle
-let shapeModeToggle;
-let useShapeMode = false;
-let exportButton;
-
 // backdrop toggle
 let backdropIframe;
 let backdropToggle;
-let showBackdrop = false;
-
-// image overlay toggle
-let imageOverlayToggle;
-let showImageOverlay = true;
-
-// dimension tracking
-let dimensionHistory = [];
-const MAX_HISTORY_FRAMES = 300;
-let dimensionStats = {};
+let showBackdrop = true;
 
 // multi-person tracking
 let trackedPeople = {};
 let nextPersonId = 0;
-
-let characterImageSets = [];
 
 const KEYPOINT_NAMES = [
   "nose",
@@ -48,33 +30,6 @@ const KEYPOINT_NAMES = [
   "right_ankle"
 ];
 
-const BODY_PARTS = [
-  { name: "head", image: "head", points: ["nose", "left_shoulder", "right_shoulder"] },
-  { name: "chest", image: "chest", points: ["left_shoulder", "right_shoulder", "left_hip", "right_hip"] },
-  { name: "left-shoulder", image: "left-shoulder", points: ["left_shoulder", "left_elbow"] },
-  { name: "right-shoulder", image: "right-shoulder", points: ["right_shoulder", "right_elbow"] },
-  { name: "left-arm", image: "left-arm", points: ["left_elbow", "left_wrist"] },
-  { name: "right-arm", image: "right-arm", points: ["right_elbow", "right_wrist"] },
-  { name: "left-thigh", image: "left-thigh", points: ["left_hip", "left_knee"] },
-  { name: "right-thigh", image: "right-thigh", points: ["right_hip", "right_knee"] },
-  { name: "left-leg", image: "left-leg", points: ["left_knee", "left_ankle"] },
-  { name: "right-leg", image: "right-leg", points: ["right_knee", "right_ankle"] }
-];
-
-// Color mapping for shape mode — vibrant cool palette
-const BODY_PART_COLORS = {
-  "head": [0, 230, 255],           // vivid cyan
-  "chest": [40, 80, 255],          // vivid blue
-  "left-shoulder": [100, 50, 255], // blue-violet
-  "right-shoulder": [100, 50, 255],// blue-violet
-  "left-arm": [0, 200, 230],       // teal-cyan
-  "right-arm": [0, 200, 230],      // teal-cyan
-  "left-thigh": [160, 40, 255],    // vivid violet
-  "right-thigh": [160, 40, 255],   // vivid violet
-  "left-leg": [0, 170, 210],       // deep teal
-  "right-leg": [0, 170, 210]       // deep teal
-};
-
 // tuning
 const SMOOTHING = 0.06;
 const MATCH_DISTANCE = 180;   // max px to match same person
@@ -87,50 +42,7 @@ const TRAIL_LENGTH = 60;       // number of ghost frames kept
 const TRAIL_SAMPLE_RATE = 1;   // capture a snapshot every N draw frames
 
 function preload() {
-
-   function loadCharacterImages(folder) {
-    let imgs = {};
-    const parts = [
-      "head", "chest",
-      "left-shoulder", "left-arm", "left-thigh", "left-leg",
-      "right-shoulder", "right-arm", "right-thigh", "right-leg"
-    ];
-    for (let part of parts) {
-      imgs[part] = loadImage(`${folder}/${part}.png`);
-    }
-    // Alias right-side limbs to their left counterparts if needed
-    // if (!imgs["right-shoulder"]) imgs["right-shoulder"] = imgs["left-shoulder"];
-    // if (!imgs["right-arm"]) imgs["right-arm"] = imgs["left-arm"];
-    // if (!imgs["right-thigh"]) imgs["right-thigh"] = imgs["left-thigh"];
-    // if (!imgs["right-leg"]) imgs["right-leg"] = imgs["left-leg"];
-    return imgs;
-  }
-
-    characterImageSets = [
-    loadCharacterImages("jordan"),
-    loadCharacterImages("ice-cube"),
-    // Add more folders here as needed
-  ];
-
   bodyPose = ml5.bodyPose("MoveNet", { flipped: true });
-
-  // Right limb images are mirrored from left at render time.
-  // Only 6 image files are required: head, chest,
-  // left-shoulder, left-arm, left-thigh, left-leg.
-
-  // Load unique images
-  // bodyPartImages["head"] = loadImage(`lebron/head.png`);
-  // bodyPartImages["chest"] = loadImage(`lebron/chest.png`);
-  // bodyPartImages["left-shoulder"] = loadImage(`lebron/left-shoulder.png`);
-  // bodyPartImages["left-arm"] = loadImage(`lebron/left-arm.png`);
-  // bodyPartImages["left-thigh"] = loadImage(`lebron/left-thigh.png`);
-  // bodyPartImages["left-leg"] = loadImage(`lebron/left-leg.png`);
-
-  // Alias right-side limbs to their left counterparts (will be flipped at render)
-  // bodyPartImages["right-shoulder"] = bodyPartImages["left-shoulder"];
-  // bodyPartImages["right-arm"] = bodyPartImages["left-arm"];
-  // bodyPartImages["right-thigh"] = bodyPartImages["left-thigh"];
-  // bodyPartImages["right-leg"] = bodyPartImages["left-leg"];
 }
 
 function mousePressed() {
@@ -162,22 +74,6 @@ function setup() {
     showVideo = videoToggle.checked();
   });
 
-  // Shape mode toggle
-  shapeModeToggle = createCheckbox(" Use Shapes (Debug Mode)", false);
-  shapeModeToggle.parent("checkboxContainer");
-  shapeModeToggle.style("color", "white");
-  shapeModeToggle.style("font-size", "18px");
-  shapeModeToggle.style("display", "block");
-  shapeModeToggle.style("margin-bottom", "10px");
-  shapeModeToggle.changed(() => {
-    useShapeMode = shapeModeToggle.checked();
-    if (!useShapeMode) {
-      // Clear dimension history when toggling off
-      dimensionHistory = [];
-      dimensionStats = {};
-    }
-  });
-
   // Backdrop iframe (YouTube, looping, muted for autoplay)
   backdropIframe = createElement('iframe');
   backdropIframe.id('backdropFrame');
@@ -185,8 +81,8 @@ function setup() {
   backdropIframe.attribute('allow', 'autoplay; encrypted-media; accelerometer; gyroscope; picture-in-picture');
   backdropIframe.attribute('frameborder', '0');
 
-  // Backdrop toggle
-  backdropToggle = createCheckbox(" Show backdrop", false);
+  // Backdrop toggle (on by default)
+  backdropToggle = createCheckbox(" Show backdrop", true);
   backdropToggle.parent("checkboxContainer");
   backdropToggle.style("color", "white");
   backdropToggle.style("font-size", "18px");
@@ -198,22 +94,9 @@ function setup() {
     if (frame) frame.style.display = showBackdrop ? 'block' : 'none';
   });
 
-  // Image overlay toggle
-  imageOverlayToggle = createCheckbox(" Show image overlay", true);
-  imageOverlayToggle.parent("checkboxContainer");
-  imageOverlayToggle.style("color", "white");
-  imageOverlayToggle.style("font-size", "18px");
-  imageOverlayToggle.style("display", "block");
-  imageOverlayToggle.style("margin-bottom", "10px");
-  imageOverlayToggle.changed(() => {
-    showImageOverlay = imageOverlayToggle.checked();
-  });
-
-  // Export button
-  exportButton = createButton("Export Dimension Report");
-  exportButton.parent("checkboxContainer");
-  exportButton.style("font-size", "16px");
-  exportButton.mousePressed(exportDimensionReport);
+  // Show backdrop on load
+  let frame = document.getElementById('backdropFrame');
+  if (frame) frame.style.display = 'block';
 }
 
 function draw() {
@@ -233,13 +116,8 @@ function draw() {
 
   // draw all tracked scrapbook bodies
   for (let id in trackedPeople) {
-    drawScrapbookBody(trackedPeople[id], id);
+    drawScrapbookBody(trackedPeople[id]);
   }
-
-  drawTrackerLabels();
-
-  // draw dimension panel if in shape mode
-  drawDimensionPanel();
 }
 
 /* =========================
@@ -328,15 +206,12 @@ function createTrackedPerson(pose, center) {
     }
   }
 
-  let characterIndex = (Object.keys(trackedPeople).length) % characterImageSets.length;
-
   trackedPeople[id] = {
     id,
     smoothPoints,
     center: createVector(center.x, center.y),
     lastSeen: frameCount,
     accent: random(360),
-    characterIndex,
     poseHistory: []
   };
 }
@@ -422,154 +297,20 @@ function getPoseSize(pose) {
    DRAWING
 ========================= */
 
-function drawScrapbookBody(person, id) {
-  let nose = getPoint(person, "nose");
-  let leftShoulder = getPoint(person, "left_shoulder");
-  let rightShoulder = getPoint(person, "right_shoulder");
-  let leftElbow = getPoint(person, "left_elbow");
-  let rightElbow = getPoint(person, "right_elbow");
-  let leftWrist = getPoint(person, "left_wrist");
-  let rightWrist = getPoint(person, "right_wrist");
-  let leftHip = getPoint(person, "left_hip");
-  let rightHip = getPoint(person, "right_hip");
-  let leftKnee = getPoint(person, "left_knee");
-  let rightKnee = getPoint(person, "right_knee");
-  let leftAnkle = getPoint(person, "left_ankle");
-  let rightAnkle = getPoint(person, "right_ankle");
-
+function drawScrapbookBody(person) {
   if (
-    !nose ||
-    !leftShoulder || !rightShoulder ||
-    !leftHip || !rightHip ||
-    !leftElbow || !rightElbow ||
-    !leftWrist || !rightWrist ||
-    !leftKnee || !rightKnee ||
-    !leftAnkle || !rightAnkle
-  ) {
-    return;
-  }
-
-  let shoulderCenter = midpoint(leftShoulder, rightShoulder);
-  let hipCenter = midpoint(leftHip, rightHip);
-
-
-  let shoulderWidth = dist(
-    leftShoulder.x, leftShoulder.y,
-    rightShoulder.x, rightShoulder.y
-  );
-
-  // let headSize = shoulderWidth * 0.75;
-  // let handSize = shoulderWidth * 0.22;
-  // let footSize = shoulderWidth * 0.28;
-  // let limbThickness = shoulderWidth * 0.22;
-  // let torsoWidth = shoulderWidth * 0.9;
+    !getPoint(person, "nose") ||
+    !getPoint(person, "left_shoulder") || !getPoint(person, "right_shoulder") ||
+    !getPoint(person, "left_hip")      || !getPoint(person, "right_hip") ||
+    !getPoint(person, "left_elbow")    || !getPoint(person, "right_elbow") ||
+    !getPoint(person, "left_wrist")    || !getPoint(person, "right_wrist") ||
+    !getPoint(person, "left_knee")     || !getPoint(person, "right_knee") ||
+    !getPoint(person, "left_ankle")    || !getPoint(person, "right_ankle")
+  ) return;
 
   colorMode(HSL);
-
-  // fill((person.accent + 60) % 360, 70, 65, 0.75);
-  // drawLimbRect(leftShoulder, leftElbow, limbThickness);
-  // drawLimbRect(leftElbow, leftWrist, limbThickness * 0.9);
-
-  // fill((person.accent + 120) % 360, 70, 65, 0.75);
-  // drawLimbRect(rightShoulder, rightElbow, limbThickness);
-  // drawLimbRect(rightElbow, rightWrist, limbThickness * 0.9);
-
-  // fill((person.accent + 180) % 360, 70, 65, 0.75);
-  // drawLimbRect(leftHip, leftKnee, limbThickness * 1.1);
-  // drawLimbRect(leftKnee, leftAnkle, limbThickness);
-
-
-  // fill((person.accent + 240) % 360, 70, 65, 0.75);
-  // drawLimbRect(rightHip, rightKnee, limbThickness * 1.1);
-  // drawLimbRect(rightKnee, rightAnkle, limbThickness);
-
-  // fill(person.accent, 70, 65, 0.7);
-  // drawLimbRect(shoulderCenter, hipCenter, torsoWidth);
-
-
-  // fill((person.accent + 30) % 360, 70, 75, 0.85);
-  // stroke(255);
-  // strokeWeight(2);
-  // circle(nose.x, nose.y, headSize);
-
-  let images = characterImageSets[person.characterIndex] || characterImageSets[0];
-
-  // --- Single dot layer with per-dot fluid trails ---
-  if (!useShapeMode) {
-    let shimmer = (frameCount * 1.2) % 360;
-    let base    = (person.accent + shimmer) % 360;
-    drawBodyAtSnapshot(person, person.smoothPoints, 85, base, person.poseHistory);
-  }
-
-  // Render body parts (either images or shapes based on mode)
-  if (useShapeMode) {
-    // In shape mode, use normalized scale factors to show true skeletal proportions
-    drawBodyShape(images["left-arm"], leftElbow, leftWrist, "left-arm", id, 0.8);
-    drawBodyShape(images["left-shoulder"], leftShoulder, leftElbow, "left-shoulder", id, 0.8);
-
-    drawBodyShape(images["right-arm"], rightElbow, rightWrist, "right-arm", id, 0.8);
-    drawBodyShape(images["right-shoulder"], rightShoulder, rightElbow, "right-shoulder", id, 0.8);
-
-    drawBodyShape(images["left-leg"], leftKnee, leftAnkle, "left-leg", id, 0.8);
-    drawBodyShape(images["left-thigh"], leftHip, leftKnee, "left-thigh", id, 0.8);
-
-    drawBodyShape(images["right-leg"], rightKnee, rightAnkle, "right-leg", id, 0.8);
-    drawBodyShape(images["right-thigh"], rightHip, rightKnee, "right-thigh", id, 0.8);
-
-    drawBodyShape(images["chest"], shoulderCenter, hipCenter, "chest", id, 0.8);
-
-    drawBodyShape(images["head"], nose, shoulderCenter, "head", id, 1.2, 0.25);
-  } else if (showImageOverlay) {
-    // In image mode, use artistic scale factors for collage effect
-    noTint();
-    colorMode(RGB);
-
-    drawBodyImage(images["left-leg"],       leftKnee,      leftAnkle,      .4   * 1.05, 0, false);
-    drawBodyImage(images["left-thigh"],     leftHip,       leftKnee,       .4   * 1.05, 0, false);
-    drawBodyImage(images["right-leg"],      rightKnee,     rightAnkle,     .4   * 1.05, 0, false);
-    drawBodyImage(images["right-thigh"],    rightHip,      rightKnee,      .4   * 1.05, 0, false);
-    drawBodyImage(images["chest"],          shoulderCenter, hipCenter,     .8   * 0.95, 0, false);
-    drawBodyImage(images["left-shoulder"],  leftShoulder,  leftElbow,      .5 * 0.85 * 1.05, 0, false);
-    drawBodyImage(images["right-shoulder"], rightShoulder, rightElbow,     .5 * 0.85 * 1.05, 0, false);
-
-    // Arms: shifted 15px inward
-    let lElbowIn = createVector(leftElbow.x  + 15, leftElbow.y);
-    let lWristIn = createVector(leftWrist.x  + 15, leftWrist.y);
-    let rElbowIn = createVector(rightElbow.x - 15, rightElbow.y);
-    let rWristIn = createVector(rightWrist.x - 15, rightWrist.y);
-    drawBodyImage(images["left-arm"],  lElbowIn, lWristIn, .55 * 0.85 * 0.9 * 1.05, 0, false);
-    drawBodyImage(images["right-arm"], rElbowIn, rWristIn, .55 * 0.85 * 0.9 * 1.05, 0, false);
-
-    // Head: offset proportional to head size so it scales with the body
-    let headLen = dist(nose.x, nose.y, shoulderCenter.x, shoulderCenter.y);
-    let adjustedNose = createVector(nose.x, nose.y - headLen * 0.8);
-    drawBodyImage(images["head"], adjustedNose, shoulderCenter, 0.675, 0, false);
-
-    noTint();
-    colorMode(RGB);
-  }
-
-
-
-  // optional joint dots
-  drawJointDots(person);
-
+  drawBodyAtSnapshot(person, person.smoothPoints, 85, person.accent, person.poseHistory);
   colorMode(RGB);
-}
-
-function drawLimbRect(a, b, thickness) {
-  let mid = midpoint(a, b);
-  let len = dist(a.x, a.y, b.x, b.y);
-  let angle = atan2(b.y - a.y, b.x - a.x);
-
-  push();
-  translate(mid.x, mid.y);
-  rotate(angle);
-  rectMode(CENTER);
-  stroke(255);
-  strokeWeight(2);
-  rect(0, 0, len, thickness, thickness * 0.55);
-  pop();
 }
 
 function midpoint(a, b) {
@@ -580,145 +321,9 @@ function getPoint(person, name) {
   return person.smoothPoints[name];
 }
 
-function drawJointDots(person) {
-  fill(255);
-  noStroke();
-
-  for (let key in person.smoothPoints) {
-    let p = person.smoothPoints[key];
-    circle(p.x, p.y, 6);
-  }
-}
-
-function drawTrackerLabels() {
-  fill(255);
-  noStroke();
-  textSize(16);
-
-  for (let id in trackedPeople) {
-    let tracked = trackedPeople[id];
-    text(`ID ${id}`, tracked.center.x + 10, tracked.center.y - 10);
-  }
-}
-
-function drawBodyImage(img, a, b, scaleFactor = 1, offsetY = 0, flipped = false) {
-  if (!img || !a || !b) return;
-
-  let mid = midpoint(a, b);
-  let len = dist(a.x, a.y, b.x, b.y);
-  let angle = atan2(b.y - a.y, b.x - a.x);
-
-  // preserve original image proportions
-  let aspect = img.height / img.width;
-
-  let drawWidth = len * scaleFactor;
-  let drawHeight = drawWidth * aspect;
-
-  push();
-  translate(mid.x, mid.y);
-  rotate(angle - PI / 2);
-
-  // Apply horizontal flip for right-side limbs (after rotation)
-  if (flipped) {
-    scale(-1, 1);
-  }
-
-  translate(0, -drawHeight * offsetY);
-
-  imageMode(CENTER);
-
-  image(img, 0, 0, drawWidth, drawHeight);
-
-  pop();
-
-  return { width: drawWidth, height: drawHeight, aspect: aspect };
-}
-
-function drawBodyShape(img, a, b, partName, personId, scale = 1, offsetY = 0) {
-  if (!img || !a || !b) return null;
-
-  let mid = midpoint(a, b);
-  let len = dist(a.x, a.y, b.x, b.y);
-  let angle = atan2(b.y - a.y, b.x - a.x);
-
-  // Calculate width and height based on body part type
-  let drawWidth, drawHeight, aspect;
-
-  if (partName === "head") {
-    // Head: circular/oval, size based on distance from nose to shoulders
-    drawWidth = len * 1.2;  // width of head
-    drawHeight = len * 1.4; // height of head (slightly taller)
-    aspect = drawHeight / drawWidth;
-    // translate( 0, -600, 0);
-  } else if (partName === "chest") {
-    // Chest: width = shoulder width, height = torso length
-    drawWidth = len * 0.7;  // torso width
-    drawHeight = len * 1.0; // full torso length
-    aspect = drawHeight / drawWidth;
-  } else {
-    // Limbs: thin width, full length along the bone
-    drawWidth = len * 0.35;  // limb thickness (width)
-    drawHeight = len * 1.0;  // full bone length
-    aspect = drawHeight / drawWidth;
-  }
-
-  // Get color for this body part
-  let partColor = BODY_PART_COLORS[partName] || [200, 200, 200];
-
-  push();
-  translate(mid.x, mid.y);
-  rotate(angle - PI / 2);
-
-  // Draw the shape (ellipse)
-  fill(partColor[0], partColor[1], partColor[2], 180);
-  stroke(255);
-  strokeWeight(2);
-  ellipseMode(CENTER);
-  ellipse(0, 0, drawWidth, drawHeight);
-
-  // Draw label
-  fill(255);
-  noStroke();
-  textSize(12);
-  textAlign(CENTER, CENTER);
-  text(partName, 0, 0);
-
-  pop();
-
-  // Draw keypoint dots
-  fill(255, 255, 0);
-  noStroke();
-  circle(a.x, a.y, 6);
-  circle(b.x, b.y, 6);
-
-  // Log dimensions (every 10 frames)
-  if (useShapeMode && frameCount % 10 === 0) {
-    logDimension(partName, personId, drawWidth, drawHeight, aspect);
-  }
-
-  return { width: drawWidth, height: drawHeight, aspect: aspect };
-}
-
 /* =========================
    COLOR TRAIL
 ========================= */
-
-// Returns a keypoint map linearly interpolated between two snapshots
-function lerpSnapshots(ptsA, ptsB, t) {
-  let result = {};
-  for (let key in ptsA) {
-    if (ptsB[key]) {
-      result[key] = createVector(
-        lerp(ptsA[key].x, ptsB[key].x, t),
-        lerp(ptsA[key].y, ptsB[key].y, t)
-      );
-    } else {
-      result[key] = ptsA[key].copy();
-    }
-  }
-  return result;
-}
-
 
 function drawBodyAtSnapshot(person, pts, alpha, tintHue, ptsHistory = []) {
   let nose          = pts["nose"];
@@ -1103,223 +708,3 @@ function dotFillEllipse(cx, cy, rx, ry, dotSize, spacing, hue, alpha, cxHist = [
   }
 }
 
-// Tapered capsule: wide at joint a, narrow at joint b
-function drawTaperedLimb(a, b, ratioA, ratioB) {
-  let len   = dist(a.x, a.y, b.x, b.y);
-  let angle = atan2(b.y - a.y, b.x - a.x);
-  let px    = cos(angle + HALF_PI);
-  let py    = sin(angle + HALF_PI);
-
-  let hwA = (len * ratioA) / 2;
-  let hwB = (len * ratioB) / 2;
-
-  noStroke();
-  beginShape();
-  vertex(a.x + px * hwA, a.y + py * hwA);
-  vertex(b.x + px * hwB, b.y + py * hwB);
-  vertex(b.x - px * hwB, b.y - py * hwB);
-  vertex(a.x - px * hwA, a.y - py * hwA);
-  endShape(CLOSE);
-
-  // Rounded caps
-  ellipseMode(CENTER);
-  ellipse(a.x, a.y, len * ratioA, len * ratioA);
-  ellipse(b.x, b.y, len * ratioB, len * ratioB);
-}
-
-// Torso as a trapezoid following actual shoulder/hip keypoints
-function drawTorsoSilhouette(ls, rs, lh, rh) {
-  let sHW = dist(ls.x, ls.y, rs.x, rs.y) * 0.368;
-  let hHW = dist(lh.x, lh.y, rh.x, rh.y) * 0.368;
-
-  let sMid  = midpoint(ls, rs);
-  let hMid  = midpoint(lh, rh);
-  let angle = atan2(hMid.y - sMid.y, hMid.x - sMid.x);
-  let px    = cos(angle + HALF_PI);
-  let py    = sin(angle + HALF_PI);
-
-  noStroke();
-  beginShape();
-  vertex(sMid.x + px * sHW, sMid.y + py * sHW);
-  vertex(hMid.x + px * hHW, hMid.y + py * hHW);
-  vertex(hMid.x - px * hHW, hMid.y - py * hHW);
-  vertex(sMid.x - px * sHW, sMid.y - py * sHW);
-  endShape(CLOSE);
-  // Rounded caps at shoulder and hip lines
-  ellipseMode(CENTER);
-  ellipse(sMid.x, sMid.y, sHW * 2, sHW * 2);
-  ellipse(hMid.x, hMid.y, hHW * 2, hHW * 2);
-}
-
-/* =========================
-   DIMENSION TRACKING
-========================= */
-
-function logDimension(partName, personId, width, height, aspect) {
-  // Add to history buffer
-  dimensionHistory.push({
-    frame: frameCount,
-    partName: partName,
-    personId: personId,
-    width: width,
-    height: height,
-    aspect: aspect
-  });
-
-  // Keep only last MAX_HISTORY_FRAMES
-  if (dimensionHistory.length > MAX_HISTORY_FRAMES) {
-    dimensionHistory.shift();
-  }
-
-  // Update stats
-  updateDimensionStats();
-
-  // Console log
-  console.log(`[Frame ${frameCount}] Person ${personId} - ${partName}: ${width.toFixed(1)}x${height.toFixed(1)}px (aspect: ${aspect.toFixed(2)})`);
-}
-
-function updateDimensionStats() {
-  dimensionStats = {};
-
-  // Group by part name
-  let partGroups = {};
-  for (let entry of dimensionHistory) {
-    if (!partGroups[entry.partName]) {
-      partGroups[entry.partName] = [];
-    }
-    partGroups[entry.partName].push(entry);
-  }
-
-  // Calculate stats for each part
-  for (let partName in partGroups) {
-    let entries = partGroups[partName];
-    let widths = entries.map(e => e.width).sort((a, b) => a - b);
-    let heights = entries.map(e => e.height).sort((a, b) => a - b);
-    let aspects = entries.map(e => e.aspect);
-
-    let minW = Math.min(...widths);
-    let maxW = Math.max(...widths);
-    let medianW = widths[Math.floor(widths.length / 2)];
-
-    let minH = Math.min(...heights);
-    let maxH = Math.max(...heights);
-    let medianH = heights[Math.floor(heights.length / 2)];
-
-    // Most common aspect ratio (mode)
-    let aspectMode = aspects.reduce((acc, val) => {
-      acc[val.toFixed(2)] = (acc[val.toFixed(2)] || 0) + 1;
-      return acc;
-    }, {});
-    let mostCommonAspect = parseFloat(Object.keys(aspectMode).reduce((a, b) =>
-      aspectMode[a] > aspectMode[b] ? a : b
-    ));
-
-    // Suggested cutout size (rounded to nearest 10)
-    let suggestedW = Math.round(medianW / 10) * 10;
-    let suggestedH = Math.round(medianH / 10) * 10;
-
-    dimensionStats[partName] = {
-      minW, maxW, medianW,
-      minH, maxH, medianH,
-      suggestedCutoutW: suggestedW,
-      suggestedCutoutH: suggestedH,
-      aspectRatio: mostCommonAspect
-    };
-  }
-}
-
-function drawDimensionPanel() {
-  if (!useShapeMode || Object.keys(dimensionStats).length === 0) return;
-
-  push();
-
-  // Panel background
-  fill(0, 0, 0, 200);
-  stroke(255);
-  strokeWeight(2);
-  let panelX = width - 420;
-  let panelY = 20;
-  let panelW = 400;
-  let lineHeight = 20;
-  let padding = 10;
-
-  let numParts = Object.keys(dimensionStats).length;
-  let panelH = padding * 2 + lineHeight * (numParts * 3 + 2);
-
-  rect(panelX, panelY, panelW, panelH);
-
-  // Panel content
-  fill(255);
-  noStroke();
-  textSize(14);
-  textAlign(LEFT, TOP);
-
-  let y = panelY + padding;
-  text("DIMENSION ANALYSIS", panelX + padding, y);
-  y += lineHeight;
-  text(`Frames analyzed: ${dimensionHistory.length}`, panelX + padding, y);
-  y += lineHeight + 5;
-
-  textSize(11);
-  for (let partName in dimensionStats) {
-    let stats = dimensionStats[partName];
-
-    fill(BODY_PART_COLORS[partName] || [200, 200, 200]);
-    text(`${partName}:`, panelX + padding, y);
-    y += lineHeight;
-
-    fill(255);
-    text(`  Range: ${stats.minW.toFixed(0)}-${stats.maxW.toFixed(0)} x ${stats.minH.toFixed(0)}-${stats.maxH.toFixed(0)}px`, panelX + padding, y);
-    y += lineHeight;
-
-    fill(100, 255, 100);
-    text(`  Suggested: ${stats.suggestedCutoutW} x ${stats.suggestedCutoutH}px (${stats.aspectRatio.toFixed(2)})`, panelX + padding, y);
-    y += lineHeight + 3;
-  }
-
-  pop();
-}
-
-function exportDimensionReport() {
-  if (dimensionHistory.length === 0) {
-    console.warn("No dimension data to export. Enable shape mode first.");
-    alert("No dimension data to export. Enable shape mode and let it run for a few frames.");
-    return;
-  }
-
-  updateDimensionStats();
-
-  let report = [];
-  for (let partName in dimensionStats) {
-    let stats = dimensionStats[partName];
-    report.push({
-      bodyPart: partName,
-      minW: stats.minW,
-      maxW: stats.maxW,
-      medianW: stats.medianW,
-      minH: stats.minH,
-      maxH: stats.maxH,
-      medianH: stats.medianH,
-      suggestedCutoutW: stats.suggestedCutoutW,
-      suggestedCutoutH: stats.suggestedCutoutH,
-      aspectRatio: stats.aspectRatio
-    });
-  }
-
-  // Output to console
-  console.log("=== DIMENSION REPORT ===");
-  console.log(JSON.stringify(report, null, 2));
-
-  // Trigger download
-  let dataStr = JSON.stringify(report, null, 2);
-  let dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
-
-  let exportFileDefaultName = 'dimensions_report.json';
-
-  let linkElement = document.createElement('a');
-  linkElement.setAttribute('href', dataUri);
-  linkElement.setAttribute('download', exportFileDefaultName);
-  linkElement.click();
-
-  console.log("Report exported and download triggered.");
-}
